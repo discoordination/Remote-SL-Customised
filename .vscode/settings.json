@@ -1,0 +1,10 @@
+{
+    "python.analysis.extraPaths": [
+        "D:/libs/AbletonLive12_MIDIRemoteScripts",
+        "${workspaceFolder}"
+    ],
+    "python.autoComplete.extraPaths": [
+        "D:/libs/AbletonLive12_MIDIRemoteScripts",
+        "${workspaceFolder}"
+    ]
+}

@@ -1,0 +1,10 @@
+
+[tool.pyright]
+# 1. Blocks calling missing functions/attributes, type errors, typos, etc.
+typeCheckingMode = "standard" 
+
+# 2. Crashes if you override a parent method WITHOUT marking it @override
+reportImplicitOverride = "error"
+
+# 3. Crashes if you mark a method @override but it doesn't match a parent method
+# (This rule is tightly bound into standard mode by default)
