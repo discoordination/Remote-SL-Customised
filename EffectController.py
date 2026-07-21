@@ -10,7 +10,8 @@
 
 import Live as Live
 
-from .consts import *
+#from .consts import *
+from .consts import Constants
 from .RemoteSLComponent import RemoteSLComponent
 from .myLogger import *
 
@@ -181,28 +182,28 @@ class EffectController(RemoteSLComponent):
 			return None
 		# -----------------------------------------------
 
-		if cc_no in fx_display_button_ccs:
+		if cc_no in Constants.Effect.NAVIGATION:
 			self.__handle_page_up_down_ccs(cc_no, cc_value)
 			return None
 		
-		if cc_no in fx_select_button_ccs:
+		if cc_no in Constants.Effect.SELECT_BUTTONS:
 			self.__handle_select_button_ccs(cc_no, cc_value)
 			return None
 		
-		if cc_no in fx_upper_button_row_ccs:
-			strip = self._strips[cc_no - FX_UPPER_BUTTON_ROW_BASE_CC]
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+		if cc_no in Constants.Effect.UPPER_BUTTONS:
+			strip = self._strips[cc_no - Constants.Effect.UPPER_BUTTON_BASE]
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				strip.on_button_pressed()
 			return None
 		
-		if cc_no in fx_poti_row_ccs:
+		if cc_no in Constants.Effect.POTS:
 			# Let Live take ownership of the pot row for device-parameter mapping.
 			return None
 		
-		if cc_no in fx_encoder_row_ccs:
+		if cc_no in Constants.Effect.ENCODERS:
 			return None
 		
-		if cc_no in fx_lower_button_row_ccs:
+		if cc_no in Constants.Effect.LOWER_BUTTONS:
 			return None
 
 
@@ -213,7 +214,7 @@ class EffectController(RemoteSLComponent):
 		"""Handle note events from the drum-pad row for the effect section."""
 
 		log("receive_midi_note() called.")
-		if note in fx_drum_pad_row_notes:
+		if note in Constants.Effect.DRUM_PADS:
 			return None
 
 		return None
@@ -260,7 +261,7 @@ class EffectController(RemoteSLComponent):
 
 		# COMBINE BOTH ROWS INTO ONE LIST OF 16 ITEMS TO FIX INDEX ERROR
 		# This gives us indices 0-7 for pots, and 8-15 for encoders
-		combined_ccs = list(fx_poti_row_ccs + fx_encoder_row_ccs)
+		combined_ccs = list(Constants.Effect.POTS + Constants.Effect.ENCODERS)
 
 		for strip_index, strip in enumerate(self._strips):
 			
@@ -284,7 +285,7 @@ class EffectController(RemoteSLComponent):
 				Live.MidiMap.map_midi_cc(
 					midi_map_handle,
 					parameter,
-					SL_MIDI_CHANNEL,
+					Constants.Hardware.MIDI_CHANNEL,
 					primary_cc_no,
 					map_mode,
 					False, # needs_takeover
@@ -359,8 +360,8 @@ class EffectController(RemoteSLComponent):
 		# for cc_no in fx_forwarded_ccs:
 		# 	Live.MidiMap.forward_midi_cc(self._parent.handle(), midi_map_handle, SL_MIDI_CHANNEL, cc_no)
 
-		for note in fx_forwarded_notes:
-			Live.MidiMap.forward_midi_note(self._parent.handle() , midi_map_handle, SL_MIDI_CHANNEL, note)
+		# for note in Constants.Effect.DRUM_PAD_ROW:
+		# 	Live.MidiMap.forward_midi_note(self._parent.handle() , midi_map_handle, MIDI.SL_CHANNEL, note)
 
 		log(f"<-----Returning from EffectController.build_midi_map({midi_map_handle}).")
 
@@ -385,8 +386,8 @@ class EffectController(RemoteSLComponent):
 		
 		log(f"EffectController.__reassign_strips(force_rebuild={force_rebuild}) called.")
 		
-		page_up_value = CC_VAL_BUTTON_RELEASED
-		page_down_value = CC_VAL_BUTTON_RELEASED
+		page_up_value = Constants.Hardware.BUTTON_RELEASED
+		page_down_value = Constants.Hardware.BUTTON_RELEASED
 		device = self._assigned_device
 
 
@@ -419,10 +420,10 @@ class EffectController(RemoteSLComponent):
 				param_index += 1
 
 			if self._bank > 0:
-				page_down_value = CC_VAL_BUTTON_PRESSED
+				page_down_value = Constants.Hardware.BUTTON_PRESSED
 
 			if self._bank + 1 < self.__number_of_parameter_banks():
-				page_up_value = CC_VAL_BUTTON_PRESSED
+				page_up_value = Constants.Hardware.BUTTON_PRESSED
 
 			self.report_bank()
 
@@ -526,7 +527,7 @@ class EffectController(RemoteSLComponent):
 		"""Handle physical banking buttons to toggle display rows before swapping MIDI maps."""
 	
 		# Only process the command when the user physically presses the button down
-		if cc_value != CC_VAL_BUTTON_PRESSED:
+		if cc_value != Constants.Hardware.BUTTON_PRESSED:
 			return None
 
 		if self._assigned_device is None:
@@ -542,7 +543,7 @@ class EffectController(RemoteSLComponent):
 			self._display_page_index = 0
 
 		# --- CASE A: PAGE UP PRESSED ---
-		if cc_no == FX_DISPLAY_PAGE_UP:
+		if cc_no == Constants.Effect.PAGE_UP:
 			if self._display_page_index + 1 < total_pages:
 				self._display_page_index += 1
 				log(f"PAGE BUTTON: Pressed Up. Virtual Display Page is now -> {self._display_page_index}")
@@ -559,7 +560,7 @@ class EffectController(RemoteSLComponent):
 					self.reassign_strips(force_rebuild=False) # TEXT SWAP ONLY, lightning fast
 
 		# --- CASE B: PAGE DOWN PRESSED ---
-		elif cc_no == FX_DISPLAY_PAGE_DOWN:
+		elif cc_no == Constants.Effect.PAGE_DOWN:
 			if self._display_page_index > 0:
 				self._display_page_index -= 1
 				log(f"PAGE BUTTON: Pressed Down. Virtual Display Page is now -> {self._display_page_index}")
@@ -584,8 +585,8 @@ class EffectController(RemoteSLComponent):
 		
 		log(f"__handle_select_button_ccs({cc_no}, {cc_value}) called.")
 		
-		if cc_no == FX_SELECT_FIRST_BUTTON_ROW:
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+		if cc_no == Constants.Effect.SELECT_TOP_BUTTON_ROW:
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 											
 								# Debounce double-broadcast hardware port packets
 				current_time = time.time()
@@ -644,9 +645,9 @@ class EffectController(RemoteSLComponent):
 				return None
 
 
-		if cc_no == FX_SELECT_ENCODER_ROW:
+		if cc_no == Constants.Effect.SELECT_ENCODER:
 			
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				
 				new_index = min(
 					len(self.song.scenes) - 1,
@@ -655,8 +656,8 @@ class EffectController(RemoteSLComponent):
 				self.song.view.selected_scene = self.song.scenes[new_index]
 			return None
 
-		if cc_no == FX_SELECT_SECOND_BUTTON_ROW:
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+		if cc_no == Constants.Effect.SELECT_BOTTOM_BUTTON_ROW:
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				new_index = min(
 					len(self.song.scenes) - 1,
 					max(0, list(self.song.scenes).index(self.song.view.selected_scene) + 1),
@@ -664,13 +665,13 @@ class EffectController(RemoteSLComponent):
 				self.song.view.selected_scene = self.song.scenes[new_index]
 			return None
 
-		if cc_no == FX_SELECT_POTIE_ROW:
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+		if cc_no == Constants.Effect.POTS:
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				self.song.view.selected_scene.fire_as_selected()
 			return None
 
-		if cc_no == FX_SELECT_DRUM_PAD_ROW:
-			if cc_value == CC_VAL_BUTTON_PRESSED:
+		if cc_no == Constants.Effect.SELECT_DRUM_PAD:
+			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				self.song.stop_all_clips()
 			return None
 
@@ -681,9 +682,9 @@ class EffectController(RemoteSLComponent):
 	def __update_select_row_leds(self):
 		
 		if self._assigned_device_is_locked:
-			self.send_midi((self.cc_status_byte(), FX_SELECT_FIRST_BUTTON_ROW, CC_VAL_BUTTON_PRESSED))
+			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_TOP_BUTTON_ROW, Constants.Hardware.BUTTON_PRESSED))
 		else:
-			self.send_midi((self.cc_status_byte(), FX_SELECT_FIRST_BUTTON_ROW, CC_VAL_BUTTON_RELEASED))
+			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_BOTTOM_BUTTON_ROW, Constants.Hardware.BUTTON_RELEASED))
 
 
 	################################################################################################################

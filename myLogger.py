@@ -3,7 +3,7 @@ from datetime import datetime
 import inspect
 
 
-from .consts import LOGGING_ENABLED
+from .consts import *
 
 # Set a completely independent, hardcoded file destination path
 # For Windows: Use a path like r"C:\Users\YourName\Desktop\script_debug.txt"
@@ -23,7 +23,7 @@ def clear_log():
 		pass
 
 
-if LOGGING_ENABLED:
+if Constants.Logging.ENABLED:
 	def log(message):
 		"""Force appends a string directly into your custom desktop file."""
 		try:

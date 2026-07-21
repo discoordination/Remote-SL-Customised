@@ -35,10 +35,10 @@ class DisplayController(RemoteSLComponent):
 		RemoteSLComponent.__init__(self, remote_sl_parent)
 
 		self._message_popup_ticks = 0
-		self.left_strip_names = [str() for _ in range(NUM_CONTROLS_PER_ROW)]
-		self.left_strip_parameters = [None for _ in range(NUM_CONTROLS_PER_ROW)]
-		self.right_strip_names = [str() for _ in range(NUM_CONTROLS_PER_ROW)]
-		self.right_strip_parameters = [None for _ in range(NUM_CONTROLS_PER_ROW)]
+		self.left_strip_names = [str() for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
+		self.left_strip_parameters = [None for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
+		self.right_strip_names = [str() for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
+		self.right_strip_parameters = [None for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
 
 		self.refresh_state()
 
@@ -60,17 +60,17 @@ class DisplayController(RemoteSLComponent):
 		"""Create a padded display string for a single strip."""
 
 		if not display_string:
-			return " " * NUM_CHARS_PER_DISPLAY_STRIP
+			return " " * Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP
 
 		display_string = display_string.strip()
 		if (
-			len(display_string) > NUM_CHARS_PER_DISPLAY_STRIP - 1
+			len(display_string) > Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP - 1
 			and display_string.endswith("dB")
 			and "." in display_string
 		):
 			display_string = display_string[:-2]
 
-		return display_string[:NUM_CHARS_PER_DISPLAY_STRIP].ljust(NUM_CHARS_PER_DISPLAY_STRIP)
+		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
 
 
 	################################################################################################################
@@ -93,8 +93,8 @@ class DisplayController(RemoteSLComponent):
 		
 		start_clear_sysex = (240, 0, 32, 41, 3, 3, 18, 0)
 		
-		left_end_sysex = (ABLETON_PID, 0, 2, 2, 4, 247)
-		right_end_sysex = (ABLETON_PID, 0, 2, 2, 5, 247)
+		left_end_sysex = (Constants.Hardware.ABLETON_PID, 0, 2, 2, 4, 247)
+		right_end_sysex = (Constants.Hardware.ABLETON_PID, 0, 2, 2, 5, 247)
 		
 		self.send_midi(start_clear_sysex + left_end_sysex)
 		self.send_midi(start_clear_sysex + right_end_sysex)
@@ -108,16 +108,16 @@ class DisplayController(RemoteSLComponent):
 		
 		final_message = " " * offset + message
 
-		if len(final_message) < NUM_CHARS_PER_DISPLAY_LINE:
-			fill_up = NUM_CHARS_PER_DISPLAY_LINE - len(final_message)
+		if len(final_message) < Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
+			fill_up =Constants.Hardware. NUM_CHARS_PER_DISPLAY_LINE - len(final_message)
 			final_message = final_message + " " * fill_up
 		
-		elif len(final_message) >= NUM_CHARS_PER_DISPLAY_LINE:
-			final_message = final_message[0:NUM_CHARS_PER_DISPLAY_LINE]
+		elif len(final_message) >= Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
+			final_message = final_message[0:Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE]
 
 		final_offset = 0
 
-		sysex_header = (240, 0, 32, 41, 3, 3, 18, 0, ABLETON_PID, 0, 2, 1)
+		sysex_header = (240, 0, 32, 41, 3, 3, 18, 0, Constants.Hardware.ABLETON_PID, 0, 2, 1)
 		sysex_pos = (final_offset, row_id)
 		sysex_text_command = (4,)
 		sysex_text = tuple(as_ascii(final_message))
@@ -217,11 +217,11 @@ class DisplayController(RemoteSLComponent):
 					continue
 				# ------------------------------------------------
 					
-				if len(strip_names) == NUM_CONTROLS_PER_ROW:
+				if len(strip_names) == Constants.Hardware.NUM_CONTROLS_PER_ROW:
 					for name in strip_names:
 						message_string += self.generate_strip_string(name)
 				else:
-					message_string = self.generate_strip_string("") * NUM_CONTROLS_PER_ROW
+					message_string = self.generate_strip_string("") * Constants.Hardware.NUM_CONTROLS_PER_ROW
 				self.send_display_string(message_string, row_id, offset=0)
 				continue
 

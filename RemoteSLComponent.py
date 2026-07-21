@@ -27,7 +27,7 @@ class RemoteSLComponent(object):
 
 	def cc_status_byte(self):
 		"""Return the CC status byte for the script's MIDI channel."""
-		return CC_STATUS + SL_MIDI_CHANNEL
+		return Constants.MIDI.STATUS + Constants.Hardware.MIDI_CHANNEL
 
 
 	def disconnect(self):

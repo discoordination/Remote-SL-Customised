@@ -64,9 +64,9 @@ class RemoteSL(ControlSurface):
 			#transport = TransportComponent()
 
 			log("\t|----->Setting up free buttons...")
-			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, cc) for cc in fx_forwarded_ccs]
-			self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, cc) for cc in ts_ccs]
-			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, cc) for cc in mx_forwarded_ccs]
+			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in [Constants.Effect.NAVIGATION, Constants.Effect.SELECT_BUTTONS, Constants.Effect.UPPER_BUTTONS]]
+			self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Transport.ALL]
+			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in [Constants.Mixer.NAVIGATION, Constants.Mixer.SELECT_BUTTONS, Constants.Mixer.BUTTONS_TOP_ROW, Constants.Mixer.BUTTONS_BOTTOM_ROW]]
 			log("\t|----->Done setting up free buttons.")
 
 			#log("\t|----->Mapping transport buttons.")
@@ -141,7 +141,7 @@ class RemoteSL(ControlSurface):
 			if hasattr(component, "build_midi_map"): # <-- transport components don't build midi maps.
 				component.build_midi_map(midi_map_handle) #(self.handle(), midi_map_handle)
 
-		self.set_pad_translations(PAD_TRANSLATION)
+		self.set_pad_translations(Constants.PAD_TRANSLATION)
 
 
 	################################################################################################################
@@ -230,8 +230,8 @@ class RemoteSL(ControlSurface):
 		for button in list(self._fx_buttons + self._ts_buttons + self._mx_buttons):
 			button.remove_value_listener(self.on_button_pressed_cb)
 
-		self._send_midi(ALL_LEDS_OFF_MESSAGE)
-		self._send_midi(GOOD_BYE_SYSEX_MESSAGE)
+		self._send_midi(Constants.SysEx.ALL_LEDS_OFF)
+		self._send_midi(Constants.SysEx.GOODBYE)
 		
 		super(RemoteSL, self).disconnect()
 
@@ -276,12 +276,12 @@ class RemoteSL(ControlSurface):
 		log("map_transport_buttons() called.")
 
 		self._transport.layer = Layer(
-			play_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_PLAY_CC),
-			stop_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_STOP_CC),
-			record_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_RECORD_CC),
-			loop_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_LOOP_CC),
-			seek_backward_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_REWIND_CC),
-			seek_forward_button=ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_FORWARD_CC)
+			play_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.PLAY),
+			stop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.STOP),
+			record_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.RECORD),
+			loop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.LOOP),
+			seek_backward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.REWIND),
+			seek_forward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.FORWARD)
 		)
 		
 
@@ -332,38 +332,38 @@ class RemoteSL(ControlSurface):
 		status = midi_bytes[0] & 240
 		log(f"\t----->status={status}")
 
-		if status in (NOTE_ON_STATUS, NOTE_OFF_STATUS):
+		if status in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
 			
 			note = midi_bytes[1]
 			velocity = midi_bytes[2]
 			
-			if note in fx_notes:
+			if note in Constants.Effect.DRUM_PADS:
 				self._effect_controller.receive_midi_note(note, velocity)
-				return None
-			if note in mx_notes:
-				#self._mixer_controller.receive_midi_note(note, velocity) <- commented out as method doesn't exist.
 				return None
 			
 			log("unknown MIDI message %s" % str(midi_bytes))
 			return None
 
 
-		if status == CC_STATUS:
+		if status == Constants.MIDI.STATUS:
 			
 			cc_no = midi_bytes[1]
 			cc_value = midi_bytes[2]
 
 			log("status byte received.")
 
-			if cc_no in fx_ccs:
+			if cc_no in Constants.Effect.ALL:
 				self._effect_controller.receive_midi_cc(cc_no, cc_value)
 				return None
 			
-			if cc_no in list(mx_ccs + ts_ccs):
+			if cc_no in Constants.Mixer.ALL:
 				self._mixer_controller.receive_midi_cc(cc_no, cc_value)
 				return None
-			
-			
+
+			if cc_no in Constants.Transport.ALL:
+				self._mixer_controller.receive_midi_cc(cc_no, cc_value)
+				return None
+				
 			log("unknown MIDI message %s" % str(midi_bytes))
 			return None
 
@@ -372,13 +372,13 @@ class RemoteSL(ControlSurface):
 			
 			log("status == 240")
 
-			if len(midi_bytes) == 13 or midi_bytes[1:4] == (0, 32, 41) or midi_bytes[8] == ABLETON_PID or midi_bytes[10] == 1:
+			if len(midi_bytes) == 13 or midi_bytes[1:4] == (0, 32, 41) or midi_bytes[8] == Constants.Hardware.ABLETON_PID or midi_bytes[10] == 1:
 				
 				#self._automap_has_control = midi_bytes[11] == 0
-				support_mkII = midi_bytes[6] * 100 + midi_bytes[7] >= 1800
+				#support_mkII = midi_bytes[6] * 100 + midi_bytes[7] >= 1800
 				
-				if not self._automap_has_control:
-					self.send_midi(ALL_LEDS_OFF_MESSAGE)
+				#if not self._automap_has_control:
+				self.send_midi(Constants.SysEx.ALL_LEDS_OFF)
 				
 				for component in self._components:
 					
@@ -492,7 +492,7 @@ class RemoteSL(ControlSurface):
 		
 		#super(RemoteSL, self).suggest_map_mode(cc_no, channel)
 
-		if cc_no in fx_encoder_row_ccs:
+		if cc_no in Constants.Effect.ENCODERS:
 			return Live.MidiMap.MapMode.relative_smooth_signed_bit
 		return Live.MidiMap.MapMode.absolute
 	
@@ -566,7 +566,7 @@ class RemoteSL(ControlSurface):
 
 		log("RemoteSL._update_hardware() called.")
 
-		self._send_midi(WELCOME_SYSEX_MESSAGE)
+		self._send_midi(Constants.SysEx.WELCOME)
 		for component in self._components:
 				if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
 					component.refresh_state()

@@ -1,212 +1,245 @@
-# Source Generated with Decompyle++
-# File: consts.pyc (Python 3.11)
-
-"""MIDI and display constants for the Remote SL controller script.
-
-The values in this module are shared by the various controller components.
-"""
-
-LOGGING_ENABLED = True
-
-# Basic MIDI status bytes.
-NOTE_OFF_STATUS = 128
-NOTE_ON_STATUS = 144
-CC_STATUS = 176
-
-# General controller limits.
-NUM_NOTES = 127
-NUM_CC_NO = 127
-NUM_CHANNELS = 15
-NUM_CONTROLS_PER_ROW = 8
-SL_MIDI_CHANNEL = 0
-CC_VAL_BUTTON_PRESSED = 1
-CC_VAL_BUTTON_RELEASED = 0
-ABLETON_PID = 4
-
-# Sysex messages used to initialise and shut down the Remote SL hardware.
-WELCOME_SYSEX_MESSAGE = (
-	240,
-	0,
-	32,
-	41,
-	3,
-	3,
-	18,
-	0,
-	ABLETON_PID,
-	0,
-	1,
-	1,
-	247,
-)
-
-GOOD_BYE_SYSEX_MESSAGE = (
-	240,
-	0,
-	32,
-	41,
-	3,
-	3,
-	18,
-	0,
-	ABLETON_PID,
-	0,
-	1,
-	0,
-	247,
-)
-ALL_LEDS_OFF_MESSAGE = (CC_STATUS + SL_MIDI_CHANNEL, 78, 0)
-
-# Display layout constants.
-NUM_CHARS_PER_DISPLAY_STRIP = 9
-NUM_CHARS_PER_DISPLAY_LINE = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
+# consts.py
 
 
-def __create_row_range(cc_base):
-	"""Create a contiguous CC range for a button or encoder row."""
-	return list(range(cc_base, cc_base + NUM_CONTROLS_PER_ROW))
-
-#==========================================================
-
-# Effect-section controller CC and note constants.
-
-# Page up and down
-FX_DISPLAY_PAGE_UP = 88
-FX_DISPLAY_PAGE_DOWN = 89
-
-# Left buttons down far left of controls.
-FX_SELECT_FIRST_BUTTON_ROW = 80
-FX_SELECT_ENCODER_ROW = 81
-FX_SELECT_SECOND_BUTTON_ROW = 82
-FX_SELECT_POTIE_ROW = 83
-FX_SELECT_DRUM_PAD_ROW = 84
-
-# Bases for rows of buttons and encoders.
-FX_UPPER_BUTTON_ROW_BASE_CC = 24
-FX_ENCODER_ROW_BASE_CC = 56
-FX_LOWER_BUTTON_ROW_BASE_CC = 32
-FX_POTI_ROW_BASE_CC = 8
-FX_DRUM_PAD_ROW_BASE_NOTE = 36
+from typing import List
+from dataclasses import dataclass
 
 
-# Combined values.
-fx_display_button_ccs = [FX_DISPLAY_PAGE_UP, FX_DISPLAY_PAGE_DOWN]
+# === Helper Functions ===
+def _range(start: int, count: int = 8) -> List[int]:
+    """Create a list of CC numbers starting at 'start'."""
+    return list(range(start, start + count))
 
-fx_select_button_ccs = list(range(FX_SELECT_FIRST_BUTTON_ROW, FX_SELECT_DRUM_PAD_ROW + 1))
 
-fx_upper_button_row_ccs = __create_row_range(FX_UPPER_BUTTON_ROW_BASE_CC)
+# === Main Constants Container ===
+class Constants:
+    """Container for all Remote SL Classic constants."""
 
-fx_encoder_row_ccs = __create_row_range(FX_ENCODER_ROW_BASE_CC)
 
-fx_lower_button_row_ccs = __create_row_range(FX_LOWER_BUTTON_ROW_BASE_CC)
+    class Logging:
+        ENABLED = True
 
-fx_poti_row_ccs = __create_row_range(FX_POTI_ROW_BASE_CC)
-
-fx_drum_pad_row_notes = __create_row_range(FX_DRUM_PAD_ROW_BASE_NOTE)
-
-fx_ccs = (
-	fx_display_button_ccs
-	+ fx_select_button_ccs
-	+ fx_upper_button_row_ccs
-	+ fx_encoder_row_ccs
-	+ fx_lower_button_row_ccs
-	+ fx_poti_row_ccs
-)
-
-fx_notes = fx_drum_pad_row_notes
-
-# A subset considered to be forwarded.
-fx_forwarded_ccs = fx_display_button_ccs + fx_select_button_ccs + fx_upper_button_row_ccs
-
-fx_forwarded_notes = []
+    
+    # === Hardware Constants ===
+    class Hardware:
+        """Basic hardware configuration."""
+        NUM_CONTROLS_PER_ROW = 8
+        NUM_CHARS_PER_DISPLAY_STRIP = 9
+        NUM_CHARS_PER_DISPLAY_LINE = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
+        NUM_CHANNELS = 15
+        MIDI_CHANNEL = 0
+        BUTTON_PRESSED = 1
+        BUTTON_RELEASED = 0
+        ABLETON_PID = 4
+    
 
 
 
-#==========================================================
-
-# Mixer-section controller CC and note constants.
-MX_DISPLAY_PAGE_UP = 90
-MX_DISPLAY_PAGE_DOWN = 91
-mx_display_button_ccs = [MX_DISPLAY_PAGE_UP, MX_DISPLAY_PAGE_DOWN]
-
-MX_SELECT_SLIDER_ROW = 85
-MX_SELECT_FIRST_BUTTON_ROW = 86
-MX_SELECT_SECOND_BUTTON_ROW = 87
-mx_select_button_ccs = list(range(MX_SELECT_SLIDER_ROW, MX_SELECT_SECOND_BUTTON_ROW + 1))
-
-MX_SLIDER_ROW_BASE_CC = 16
-mx_slider_row_ccs = __create_row_range(MX_SLIDER_ROW_BASE_CC)
-
-MX_FIRST_BUTTON_ROW_BASE_CC = 40
-mx_first_button_row_ccs = __create_row_range(MX_FIRST_BUTTON_ROW_BASE_CC)
-
-MX_SECOND_BUTTON_ROW_BASE_CC = 48
-mx_second_button_row_ccs = __create_row_range(MX_SECOND_BUTTON_ROW_BASE_CC)
+    # === MIDI Status Bytes ===
+    class MIDI:
+        """MIDI status byte constants."""
+        NOTE_OFF = 128
+        NOTE_ON = 144
+        STATUS = 176
+        SYSEX = 240
+    
 
 
-mx_ccs = (
-	mx_display_button_ccs
-	+ mx_select_button_ccs
-	+ mx_first_button_row_ccs
-	+ mx_second_button_row_ccs
-	+ mx_slider_row_ccs
-#	+ ts_ccs
-)
 
-mx_notes = []
-mx_forwarded_ccs = (
-	mx_display_button_ccs
-	+ mx_select_button_ccs
-	+ mx_first_button_row_ccs
-	+ mx_second_button_row_ccs
-)
-mx_forwarded_notes = []
-
-#==========================================================
-
-# Transport control constants.
-TS_REWIND_CC = 72
-TS_FORWARD_CC = 73
-TS_STOP_CC = 74
-TS_PLAY_CC = 75
-TS_RECORD_CC = 76
-TS_LOOP_CC = 77
-TS_LOCK = 79
-
-ts_ccs = [
-	TS_REWIND_CC,
-	TS_FORWARD_CC,
-	TS_STOP_CC,
-	TS_PLAY_CC,
-	TS_RECORD_CC,
-	TS_LOOP_CC,
-	TS_LOCK,
-	TS_LOCK + 1,
-]
-ts_notes = []
+    # === Transport Controls ===
+    class Transport:
+        """Transport control CC numbers."""
+        # Individual CCs
+        REWIND = 72
+        FORWARD = 73
+        STOP = 74
+        PLAY = 75
+        RECORD = 76
+        LOOP = 77
+        LOCK = 79
+        
+        # Group all transport CCs
+        ALL = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
+        
+        # Map CC to action name (useful for debugging)
+        NAMES = {
+            REWIND: "Rewind",
+            FORWARD: "Forward", 
+            STOP: "Stop",
+            PLAY: "Play",
+            RECORD: "Record",
+            LOOP: "Loop",
+            LOCK: "Lock"
+        }
+    
 
 
-# Pad translation table for the drum pad row.
-PAD_TRANSLATION = (
-	(0, 2, 36, 0),
-	(1, 2, 37, 0),
-	(2, 2, 38, 0),
-	(3, 2, 39, 0),
-	(0, 3, 40, 0),
-	(1, 3, 41, 0),
-	(2, 3, 42, 0),
-	(3, 3, 43, 0),
-)
+
+    # === Mixer Controls ===
+    class Mixer:
+        """Mixer section CC numbers."""
+        # Individual CCs
+        SLIDER_BASE = 16
+        BUTTONS_TOP_BASE = 40
+        BUTTON_BOTTOM_BASE = 48
+        PAGE_UP = 90
+        PAGE_DOWN = 91
+        SELECT_SLIDERS = 85
+        SELECT_BUTTONS_TOP = 86
+        SELECT_BUTTONS_BOTTOM = 87
+        
+        # Derived groups
+        SLIDERS = _range(SLIDER_BASE)  # [16-23]
+        BUTTONS_TOP_ROW = _range(BUTTONS_TOP_BASE)  # [40-47]
+        BUTTONS_BOTTOM_ROW = _range(BUTTON_BOTTOM_BASE)  # [48-55]
+        
+        # Navigation buttons
+        NAVIGATION = [PAGE_UP, PAGE_DOWN]
+        SELECT_BUTTONS = [SELECT_SLIDERS, SELECT_BUTTONS_TOP, SELECT_BUTTONS_BOTTOM]
+        FORWARDED_CCS = NAVIGATION + SELECT_BUTTONS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW
+        FORWARDED_NOTE = []
+        
+        # All mixer CCs
+        ALL = SLIDERS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + NAVIGATION + SELECT_BUTTONS
+        
+        # Buttons that need LED feedback
+        LED_BUTTONS = BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + SELECT_BUTTONS
+    
 
 
-# For the MkII
 
-FX_RING_VOL_VALUE = 0
-FX_RING_PAN_VALUE = 32
-FX_RING_SIN_VALUE = 64
+    # === Effect Controls ===
+    class Effect:
+        """Effect section CC numbers."""
+        # Individual CCs
+        UPPER_BUTTON_BASE = 24
+        ENCODER_BASE = 56
+        LOWER_BUTTON_BASE = 32
+        
+        POTI_BASE = 8
+        PAGE_UP = 88
+        PAGE_DOWN = 89
+        
+        # Selector buttons
+        SELECT_TOP_BUTTON_ROW = 80
+        SELECT_ENCODER = 81
+        SELECT_BOTTOM_BUTTON_ROW = 82
+        SELECT_POTS = 83
+        SELECT_DRUM_PAD = 84
+        
+        # Grouped controls
+        UPPER_BUTTONS = _range(UPPER_BUTTON_BASE)  # [24-31]
+        ENCODERS = _range(ENCODER_BASE)  # [56-63]
+        LOWER_BUTTONS = _range(LOWER_BUTTON_BASE)  # [32-39]
+        POTS = _range(POTI_BASE)  # [8-15]
+        NAVIGATION = [PAGE_UP, PAGE_DOWN]
+        SELECT_BUTTONS = [SELECT_TOP_BUTTON_ROW, SELECT_ENCODER, SELECT_BOTTOM_BUTTON_ROW, SELECT_POTS, SELECT_DRUM_PAD]
+        
+        # All effect CCs
+        ALL = POTS + UPPER_BUTTONS + LOWER_BUTTONS + ENCODERS + NAVIGATION + SELECT_BUTTONS
+        
+        # Which rows are forwardable (no LED feedback needed)
+        FORWARDABLE = NAVIGATION + SELECT_BUTTONS + UPPER_BUTTONS
+        
+        # Drum pads (notes, not CCs)
+        DRUM_PAD_BASE_NOTE = 36
+        DRUM_PADS = _range(DRUM_PAD_BASE_NOTE)
+        
+        # Encoder feedback (MKII)
+        ENCODER_FEEDBACK_BASE = 112
+        ENCODER_FEEDBACK = _range(ENCODER_FEEDBACK_BASE)
+        
+        ENCODER_LED_MODE_BASE = 120
+        ENCODER_LED_MODES = _range(ENCODER_LED_MODE_BASE)
+    
 
-FX_ENCODER_FEEDBACK_BASE_CC = 112
-fx_encoder_feedback_ccs = __create_row_range(FX_ENCODER_FEEDBACK_BASE_CC)
 
-FX_ENCODER_LED_MODE_BASE_CC = 120
-fx_encoder_led_mode_ccs = __create_row_range(FX_ENCODER_LED_MODE_BASE_CC)
+    # === System Exclusive Messages ===
+    class SysEx:
+        """System exclusive messages."""
+        WELCOME = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 1, 247)
+        GOODBYE = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 0, 247)
+        ALL_LEDS_OFF = (176, 78, 0)
+        
+
+
+        # Display clear messages
+        @staticmethod
+        def clear_display(side: str = "left") -> tuple:
+            """Get display clear sysex for left or right display."""
+            base = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 2)
+            if side == "left":
+                return base + (4, 247)
+            else:
+                return base + (5, 247)
+        
+
+
+        @staticmethod
+        def display_text(text: str, row: int = 1) -> tuple:
+            """Create sysex for display text."""
+            from ableton.v3.base import as_ascii
+            
+            header = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 1, 0, row, 4)
+            text_bytes = tuple(as_ascii(text.ljust(72)[:72]))
+            return header + text_bytes + (247,)
+    
+
+
+    # === Pad Translation ===
+    PAD_TRANSLATION = (
+        (0, 2, 36, 0),
+        (1, 2, 37, 0),
+        (2, 2, 38, 0),
+        (3, 2, 39, 0),
+        (0, 3, 40, 0),
+        (1, 3, 41, 0),
+        (2, 3, 42, 0),
+        (3, 3, 43, 0),
+    )
+    
+
+
+    # === Control Types ===
+    class ControlType:
+        """Control type constants."""
+        POT = "pot"
+        ENCODER = "encoder"
+        BUTTON = "button"
+        SLIDER = "slider"
+        DRUM_PAD = "drum_pad"
+    
+
+
+
+    # === Slider Modes ===
+    class SliderMode:
+        """Mixer slider modes."""
+        VOLUME = 0
+        PAN = 1
+        SEND = 2
+    
+
+
+    # === Display Rows ===
+    class DisplayRow:
+        """Display row identifiers."""
+        TOP_LEFT = 1
+        TOP_RIGHT = 2
+        BOTTOM_LEFT = 3
+        BOTTOM_RIGHT = 4
+
+
+
+
+# === Convenience Aliases ===
+# These make the code more readable while maintaining clear namespacing
+# H = Constants.Hardware
+# M = Constants.MIDI
+# T = Constants.Transport
+# MXR = Constants.Mixer
+# FX = Constants.Effect
+# SYX = Constants.SysEx
+# CTRL = Constants.ControlType
+# SL = Constants.SliderMode
+# ROW = Constants.DisplayRow
