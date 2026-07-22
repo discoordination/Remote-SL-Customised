@@ -26,10 +26,10 @@ else:
         return func
 
 from .consts import *
-from .TransportComponent import TransportComponent
+from .Components.TransportComponent import TransportComponent
 from .DisplayController import DisplayController
 from .EffectController import EffectController
-from .MixerController import MixerController
+from .Components.MixerComponent import MixerController
 
 from .myLogger import *
 

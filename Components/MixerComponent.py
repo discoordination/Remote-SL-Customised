@@ -20,15 +20,15 @@ else:
 
 from typing import TYPE_CHECKING
 
-from .consts import *
-from .RemoteSLComponent import RemoteSLComponent
+from ..consts import *
+from ..RemoteSLComponent import RemoteSLComponent
 
 if TYPE_CHECKING:
-	from .RemoteSL import RemoteSL
+	from ..RemoteSL import RemoteSL
 	
 
-from .DisplayController import DisplayController
-from .myLogger import log
+from ..DisplayController import DisplayController
+from ..myLogger import log
 
 ####################################################################################################################
 

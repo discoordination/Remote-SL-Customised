@@ -7,8 +7,8 @@ from ableton.v2.control_surface import Component, MIDI_CC_TYPE
 from ableton.v2.control_surface.elements import ButtonElement
 import time
 
-from .consts import H, T
-from .myLogger import log
+from ..consts import H, T
+from ..myLogger import log
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
