@@ -6,7 +6,7 @@
 .venv/
 
 # Just for intellisense.
-Live/
+typings/
 
 # Old stuff to be removed anyway.
 ___consts.py

@@ -4,11 +4,12 @@
 ####################################################################################################################
 
 """Main Remote SL controller script for Ableton Live."""
-import Live as Live
+import Live
 
 
 #import MidiRemoteScript <-- Unnecessary unused.
 from _Generic.util import DeviceAppointer
+
 
 from ableton.v2.control_surface import ControlSurface, Component, Layer, Skin, MIDI_CC_TYPE, MIDI_NOTE_TYPE
 # from ableton.v2.control_surface.components import TransportComponent

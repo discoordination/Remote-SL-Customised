@@ -7,7 +7,7 @@
 
 from __future__ import annotations	# to avoid the circular reference on RemoteSL and not use quotes...
 
-import Live as Live
+import Live
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.

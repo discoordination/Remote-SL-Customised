@@ -9,7 +9,7 @@ capabilities that the Live framework expects from a Remote Script.
 
 
 
-from ableton.v2.control_surface.capabilities import *
+from ableton.v3.control_surface.capabilities import *
 
 from .RemoteSL import RemoteSL
 from .myLogger import *

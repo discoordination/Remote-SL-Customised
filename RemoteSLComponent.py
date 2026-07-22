@@ -4,7 +4,8 @@
 """Base helper class shared by the Remote SL controller components."""
 
 from .consts import *
-import Live as Live
+import Live
+
 
 class RemoteSLComponent(object):
 	"""Provide common accessors and MIDI helpers for controller components."""
