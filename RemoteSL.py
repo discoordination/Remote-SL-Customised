@@ -568,7 +568,7 @@ class RemoteSL(ControlSurface):
 			if hasattr(component, "update_display"): # <----Transport components don't have update display.
 				component.update_display()
 
-		self._tranport_component.update()
+		self._transport_component.update()
 
 
 	################################################################################################################

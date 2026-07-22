@@ -5,6 +5,7 @@
 
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
 from ableton.v2.control_surface.elements import ButtonElement
+import time
 
 from .consts import H, T
 from .myLogger import log
@@ -24,7 +25,6 @@ else:
 
 class TransportComponent(Component):
 
-
 	_play_button: 		ButtonElement
 	_stop_button: 		ButtonElement
 	_record_button: 	ButtonElement 
@@ -32,7 +32,13 @@ class TransportComponent(Component):
 	_rewind_button: 	ButtonElement 
 	_fforward_button: 	ButtonElement
 
-	FORW_REW_JUMP_BY_AMOUNT : float = 0.5
+	_rewind_button_down : bool = False
+	_fforward_button_down : bool = False
+
+	_rewind_hold_start_time = None
+	_fforward_hold_start_time = None
+
+	FORW_REW_JUMP_BY_AMOUNT : float = 0.25
 
 
 	################################################################################################################
@@ -40,16 +46,12 @@ class TransportComponent(Component):
 
 	def __init__(self, name, parent, *a, **k):
 
-		log(f"TransportController.__init__({name},{parent}) called.")
+		log(f"TransportComponent.__init__({name},{parent}) called.")
 
 		super().__init__(name=name, *a, **k)
 
 		self._parent = parent
 		self._song = parent.song
-		
-		# State
-		self._rewind_button_down : bool = False
-		self._fforward_button_down : bool = False
 
 		self._create_buttons()
 		self._add_button_listeners()
@@ -60,20 +62,20 @@ class TransportComponent(Component):
 	################################################################################################################
 
 
-	def on_enabled(self):
+	# def on_enabled(self):
 		
-		log("TransportComponent.on_enabled() called.")
-		# Called when component becomes active – do initial setup
+	# 	log("TransportComponent.on_enabled() called.")
+	# 	# Called when component becomes active – do initial setup
 		
 
-	################################################################################################################
+	# ################################################################################################################
 
 
-	def on_disabled(self):
+	# def on_disabled(self):
 		
-		log("TransportComponent.on_disabled() called.")
-		# Called when component is disabled – clean up
-		# e.g., turn off any LEDs
+	# 	log("TransportComponent.on_disabled() called.")
+	# 	# Called when component is disabled – clean up
+	# 	# e.g., turn off any LEDs
 	
 
 	################################################################################################################
@@ -83,8 +85,10 @@ class TransportComponent(Component):
 	def disconnect(self):
 
 		log("TransportComponent.disconnect() called.")
-		
-		return super().disconnect()
+
+		self._remove_button_listeners()
+
+		super().disconnect()
 
 
 	################################################################################################################
@@ -92,7 +96,8 @@ class TransportComponent(Component):
 
 	def _create_buttons(self):
 
-		log("TransportController._create_buttons() called.")
+		log("TransportComponent._create_buttons() called.")
+
 		# Create buttons
 		self._play_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.PLAY)
 		self._stop_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.STOP)
@@ -107,7 +112,8 @@ class TransportComponent(Component):
 
 	def _add_button_listeners(self):
 
-		log("TransportController._add_button_listeners() called.")
+		log("TransportComponent._add_button_listeners() called.")
+
 		# Add button listeners
 		self._play_button.add_value_listener(self._on_play_pressed)
 		self._stop_button.add_value_listener(self._on_stop_pressed)
@@ -115,6 +121,22 @@ class TransportComponent(Component):
 		self._loop_button.add_value_listener(self._on_loop_pressed)
 		self._rewind_button.add_value_listener(self._on_rewind_pressed)
 		self._fforward_button.add_value_listener(self._on_fforward_pressed)
+
+
+	################################################################################################################
+
+
+	def _remove_button_listeners(self):
+
+		log("TransportComponent._remove_button_listeners() called.")
+
+		# Add button listeners
+		self._play_button.remove_value_listener(self._on_play_pressed)
+		self._stop_button.remove_value_listener(self._on_stop_pressed)
+		self._record_button.remove_value_listener(self._on_rec_pressed)
+		self._loop_button.remove_value_listener(self._on_loop_pressed)
+		self._rewind_button.remove_value_listener(self._on_rewind_pressed)
+		self._fforward_button.remove_value_listener(self._on_fforward_pressed)
 
 
 	################################################################################################################
@@ -146,10 +168,15 @@ class TransportComponent(Component):
 
 		log(f"TransportComponent._on_rewind_pressed({value}) called.")
 
-		self._rewind_button_down = (value == H.BUTTON_PRESSED)
-
 		if value == H.BUTTON_PRESSED:
+			self._rewind_button_down = True
+			self._fforward_button_down = False
+			self._fforward_hold_start_time = False
+			self._rewind_hold_start_time = time.time()   # Start timing
 			self._song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
+		else:
+			self._rewind_button_down = False
+			self._rewind_hold_start_time = None          # Reset timer
 
 
 	################################################################################################################
@@ -159,10 +186,16 @@ class TransportComponent(Component):
 
 		log(f"TransportComponent._on_fforward_pressed({value}) called.")
 
-		self._forward_button_down = (value == H.BUTTON_PRESSED)
-
 		if value == H.BUTTON_PRESSED:
+			self._fforward_button_down = True
+			self._rewind_button_down = False
+			self._rewind_hold_start_time = False
+			self._fforward_hold_start_time = time.time()
 			self._song.jump_by(self.FORW_REW_JUMP_BY_AMOUNT)
+		else:
+			self._fforward_button_down = False
+			self._fforward_hold_start_time = None
+			
 
 
 	################################################################################################################
@@ -195,21 +228,51 @@ class TransportComponent(Component):
 
 		#log("TransportComponent.update() called.")
 
-		if self._rewind_button_down:
-			self._song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
-		if self._forward_button_down:
-			self._song.jump_by(self.FORW_REW_JUMP_BY_AMOUNT)
+		# Helper to get jump multiplier based on elapsed time
+		def get_multiplier(elapsed):
+			if elapsed < 0.25:
+				return 0.0
+			elif elapsed < 1.0:
+				return 1
+			elif elapsed < 1.5:
+				return 2
+			elif elapsed < 2.0:
+				return 3
+			elif elapsed < 3.0:
+				return 4
+			elif elapsed < 4.0:
+				return 8
+			elif elapsed < 6.0:
+				return 12
+			elif elapsed < 8.0:
+				return 20
+			else:
+				return 30
+
+		# Handle rewind
+		if self._rewind_button_down and self._rewind_hold_start_time is not None:
+			elapsed = time.time() - self._rewind_hold_start_time
+			multiplier = get_multiplier(elapsed)
+			jump_amount = self.FORW_REW_JUMP_BY_AMOUNT * multiplier
+			self._song.jump_by(-jump_amount)
+
+		# Handle forward
+		if self._fforward_button_down and self._fforward_hold_start_time is not None:
+			elapsed = time.time() - self._fforward_hold_start_time
+			multiplier = get_multiplier(elapsed)
+			jump_amount = self.FORW_REW_JUMP_BY_AMOUNT * multiplier
+			self._song.jump_by(jump_amount)
 
 
 	################################################################################################################
 
 
-	def send_midi(self, midi_bytes):
+	# def send_midi(self, midi_bytes):
 		
-		log("TransportComponent.send_midi() called.")
+	# 	log("TransportComponent.send_midi() called.")
 
-		if self._parent:
-			self._parent._send_midi(midi_bytes)
+	# 	if self._parent:
+	# 		self._parent._send_midi(midi_bytes)
 
 
 ####################################################################################################################
