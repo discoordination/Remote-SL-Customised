@@ -1,0 +1,11 @@
+# VSCode settings
+.vscode/
+
+.Live/
+
+__consts.py
+
+pyproject.toml
+
+.__pycache__/
+
