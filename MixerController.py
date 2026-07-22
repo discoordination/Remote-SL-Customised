@@ -9,7 +9,6 @@ from __future__ import annotations	# to avoid the circular reference on RemoteSL
 
 import Live as Live
 
-
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
@@ -26,6 +25,8 @@ from .RemoteSLComponent import RemoteSLComponent
 
 if TYPE_CHECKING:
 	from .RemoteSL import RemoteSL
+	
+
 from .DisplayController import DisplayController
 from .myLogger import log
 
@@ -51,14 +52,14 @@ class MixerController(RemoteSLComponent):
 
 		self._display_controller = display_controller
 		self._parent = remote_sl_parent
-		self._forward_button_down = False
-		self._rewind_button_down = False
-		self._strip_offset = 0
-		self._slider_mode = SLIDER_MODE_VOLUME
+		self._forward_button_down: bool = False
+		self._rewind_button_down: bool = False
+		self._strip_offset: int = 0
+		self._slider_mode: int = SLIDER_MODE_VOLUME
 		self._strips = [MixerChannelStrip(self, index) for index in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
 		self._assigned_tracks = []
-		self._transport_locked = False
-		self._lock_enquiry_delay = 0
+		self._transport_locked: bool = False
+		self._lock_enquiry_delay: int = 0
 
 		self.song.add_visible_tracks_listener(self.on_tracks_added_or_deleted)
 		self.song.add_record_mode_listener(self.on_record_mode_changed)
@@ -92,16 +93,21 @@ class MixerController(RemoteSLComponent):
 
 	################################################################################################################
 
-
-	def remote_sl_parent(self):
+	@property
+	def parent(self):
 		return self._parent
 
 
 	################################################################################################################
 
 
+	@property
 	def slider_mode(self):
 		return self._slider_mode
+
+	@slider_mode.setter
+	def slider_mode(self, newMode:int):
+		self._slider_mode = newMode
 
 
 	################################################################################################################
@@ -120,11 +126,17 @@ class MixerController(RemoteSLComponent):
 			
 		elif cc_no in Constants.Mixer.BUTTONS_TOP_ROW:
 			channel_strip = self._strips[cc_no - Constants.Mixer.BUTTONS_TOP_BASE]
+
+			log("\t|----->Top row button detected.")
+
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				channel_strip.first_button_pressed()
 		
 		elif cc_no in Constants.Mixer.BUTTONS_BOTTOM_ROW:
 			channel_strip = self._strips[cc_no - Constants.Mixer.BUTTON_BOTTOM_BASE]
+
+			log("\t|----->Bottom row button detected.")
+
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				channel_strip.second_button_pressed()
 			
@@ -166,11 +178,11 @@ class MixerController(RemoteSLComponent):
 			
 			Live.MidiMap.forward_midi_cc(self._parent.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
 
-		for cc_no in Constants.Mixer.FORWARDED_CCS: # + ts_ccs: <--- Removed this as we are handling separately.
-			Live.MidiMap.forward_midi_cc(self._parent.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
+		# for cc_no in Constants.Mixer.FORWARDED_CCS: # + ts_ccs: <--- Removed this as we are handling separately.
+		# 	Live.MidiMap.forward_midi_cc(self._parent.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
 
-		for note in Constants.Mixer.FORWARDED_NOTE:
-			Live.MidiMap.forward_midi_note(self._parent.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, note)
+		# for note in Constants.Mixer.FORWARDED_NOTES:
+		# 	Live.MidiMap.forward_midi_note(self._parent.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, note)
 
 		log(f"<-----Returning from MixerController.build_midi_map({midi_map_handle}).")
 
@@ -368,6 +380,20 @@ class MixerController(RemoteSLComponent):
 	################################################################################################################
 
 
+	# def handle_top_row_button_pressed(self, cc_no, cc_value):
+	# 	"""The mute or solo?"""
+
+
+	# ################################################################################################################
+
+
+	# def handle_bottom_row_button_pressed(self, cc_no, cc_value):
+	# 	"""The record arm"""
+
+
+	################################################################################################################
+
+
 	def on_transport_lock_changed(self):
 		
 		for strip in self._strips:
@@ -542,76 +568,90 @@ class MixerController(RemoteSLComponent):
 
 
 
+
+
 class MixerChannelStrip(object):
 	"""Represent one mixer strip with mute, arm, and slider behaviour."""
 
 	################################################################################################################
 
-	def __init__(self, mixer_controller_parent, index):
-		self._mixer_controller = mixer_controller_parent
-		self._index = index
-		self._assigned_track = None
-		self._control_second_button = True
+	def __init__(self, mixer_controller_parent: MixerController, index: int):
+
+		self._mixer_controller : MixerController = mixer_controller_parent
+		self._index : int = index
+		self._assigned_track : Live.Track.Track | None = None
+		# self._control_second_button = True
 
 	################################################################################################################
 
 
 	@property
-	def song(self):
+	def song(self) -> Live.Song.Song:
 		return self._mixer_controller.song
 
 
 	################################################################################################################
 
 
-	def assigned_track(self):
+	def assigned_track(self) -> Live.Track.Track | None:
 		return self._assigned_track
 
 
 	################################################################################################################
 
 
-	def set_assigned_track(self, track):
-		if self._assigned_track is not None:
-			if self._assigned_track != self.song.master_track:
-				self._assigned_track.remove_mute_listener(self._on_mute_changed)
-			if self._assigned_track.can_be_armed:
-				self._assigned_track.remove_arm_listener(self._on_arm_changed)
+	def set_assigned_track(self, track: Live.Track.Track | None):
+
+		#if self._assigned_track is not None:
+			#if self._assigned_track != self.song.master_track:
+				#self._assigned_track.remove_mute_listener(self._on_mute_changed)
+			#if self._assigned_track.can_be_armed:
+				#self._assigned_track.remove_arm_listener(self._on_arm_changed)
 
 		self._assigned_track = track
-		if self._assigned_track is not None:
-			if self._assigned_track != self.song.master_track:
-				self._assigned_track.add_mute_listener(self._on_mute_changed)
-			if self._assigned_track.can_be_armed:
-				self._assigned_track.add_arm_listener(self._on_arm_changed)
+		#if self._assigned_track is not None:
+			#if self._assigned_track != self.song.master_track:
+				#self._assigned_track.add_mute_listener(self._on_mute_changed)
+			#if self._assigned_track.can_be_armed:
+				#self._assigned_track.add_arm_listener(self._on_arm_changed)
 
-		self._on_mute_changed()
-		self._on_arm_changed()
+		#self._on_mute_changed()
+		#self._on_arm_changed()
 
 
 	################################################################################################################
 
 
-	def slider_parameter(self):
+	def slider_parameter(self) -> Live.DeviceParameter.DeviceParameter | None:
+		"""Gets the actual Live.DeviceParameter currently controlled by the slider."""
 		
-		if self._assigned_track:
-			slider_mode = self._mixer_controller.slider_mode()
+		if self._assigned_track is not None:
+			slider_mode = self._mixer_controller.slider_mode # What is the currently selected use for the slider.
+
 			if slider_mode == SLIDER_MODE_VOLUME:
 				return self._assigned_track.mixer_device.volume
+			
 			if slider_mode == SLIDER_MODE_PAN:
 				return self._assigned_track.mixer_device.panning
+			
 			if slider_mode >= SLIDER_MODE_SEND:
-				send_index = slider_mode - SLIDER_MODE_SEND
+				
+				send_index = slider_mode - SLIDER_MODE_SEND # What is the index of send currently controlled.
+
 				if send_index < len(self._assigned_track.mixer_device.sends):
 					return self._assigned_track.mixer_device.sends[send_index]
+
 		return None
 
 
 	################################################################################################################
 
 
-	def slider_moved(self, cc_value):
-		parameter = self.slider_parameter()
+	def slider_moved(self, cc_value: int) -> None:
+
+		log(f"MixerController.slider_moved({cc_value}) called.")
+		parameter = self.slider_parameter() # get the parameter.
+
 		if parameter and hasattr(parameter, "min") and hasattr(parameter, "max") and parameter.max != parameter.min:
 			parameter.value = parameter.min + (parameter.max - parameter.min) * (float(cc_value) / 127.0)
 
@@ -619,71 +659,80 @@ class MixerChannelStrip(object):
 	################################################################################################################
 
 
-	def take_control_of_second_button(self, take_control):
-		
-		if self._mixer_controller.support_mkII():
+	def take_control_of_second_button(self, take_control : bool) -> None:
+		pass
+		# if self._mixer_controller.support_mkII():
 			
-			self._mixer_controller.remote_sl_parent().send_midi(
-				(
-					self._mixer_controller.cc_status_byte(),
-					self._index + Constants.Mixer.BUTTON_BOTTOM_BASE,
-					0,
-				)
-			)
-		self._control_second_button = take_control
-		self._on_mute_changed()
-		self._on_arm_changed()
+		# 	self._mixer_controller.parent.send_midi(
+		# 		(
+		# 			self._mixer_controller.cc_status_byte(),
+		# 			self._index + Constants.Mixer.BUTTON_BOTTOM_BASE,
+		# 			0,
+		# 		)
+		# 	)
+		#self._control_second_button = take_control # <--- Would appear to do nothing.
+		#self._on_mute_changed() 
+		#self._on_arm_changed()
 
 
 	################################################################################################################
 
 
-	def first_button_pressed(self):
+	def top_row_button_pressed(self) -> None:
+		
 		if self._assigned_track and self._assigned_track in tuple(self.song.visible_tracks) + tuple(self.song.return_tracks):
+			log("\t----->Muting track.")
 			self._assigned_track.mute = not self._assigned_track.mute
 
 
 	################################################################################################################
 
 
-	def second_button_pressed(self):
+	def bottom_row_button_pressed(self) -> None:
+
 		if self._assigned_track and self._assigned_track in self.song.visible_tracks:
+			
 			self._mixer_controller.track_about_to_arm(self._assigned_track)
 			self._assigned_track.arm = not self._assigned_track.arm
+			log("\t----->Arming track.")
+
 			if self._assigned_track.arm and self._assigned_track.view.select_instrument():
 				self._mixer_controller.set_selected_track(self._assigned_track)
+				log("\t----->Setting track selected.")
 
 
 	################################################################################################################
 
 
-	def _on_mute_changed(self):
-		if self._mixer_controller.support_mkII() and self._assigned_track is not None:
-			value = 0
-			if self._assigned_track in tuple(self.song.tracks) + tuple(self.song.return_tracks):
-				value = 1 if not self._assigned_track.mute else 0
-			self._mixer_controller.remote_sl_parent().send_midi(
-				(
-					self._mixer_controller.cc_status_byte(),
-					self._index + Constants.Mixer.BUTTONS_TOP_BASE
-				)
-			)
+	def _on_mute_changed(self) -> None:
+		pass
+		# if self._mixer_controller.support_mkII() and self._assigned_track is not None:
+		# 	value = 0
+		# 	if self._assigned_track in tuple(self.song.tracks) + tuple(self.song.return_tracks):
+		# 		value = 1 if not self._assigned_track.mute else 0
+		# 	self._mixer_controller.parent.send_midi(
+		# 		(
+		# 			self._mixer_controller.cc_status_byte(),
+		# 			self._index + Constants.Mixer.BUTTONS_TOP_BASE
+		# 		)
+		# 	)
 
 	################################################################################################################
 
 
-	def _on_arm_changed(self):
-		if self._control_second_button or self._mixer_controller.support_mkII():
-			value = 0
-			if self._assigned_track and self._assigned_track in self.song.tracks and self._assigned_track.can_be_armed and self._assigned_track.arm:
-				value = 1
-			self._mixer_controller.send_midi(
-				(
-					self._mixer_controller.cc_status_byte(),
-					self._index + Constants.Mixer.BUTTON_BOTTOM_BASE,
-					value,
-				)
-			)
+	def _on_arm_changed(self) -> None:
+		pass
+		# if self._control_second_button or self._mixer_controller.support_mkII():
+		# 	value = 0
+		# 	if self._assigned_track and self._assigned_track in self.song.tracks and self._assigned_track.can_be_armed and self._assigned_track.arm:
+		# 		value = 1
+		# 	self._mixer_controller.send_midi(
+		# 		(
+		# 			self._mixer_controller.cc_status_byte(),
+		# 			self._index + Constants.Mixer.BUTTON_BOTTOM_BASE,
+		# 			value,
+		# 		)
+		# 	)
 
 
 

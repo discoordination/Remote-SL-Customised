@@ -1,11 +1,19 @@
-# VSCode settings
+# Git Ignore Unneeded Files
+#==========================
+
+# VSCode settings.
 .vscode/
+.venv/
 
-.Live/
+# Just for intellisense.
+Live/
 
-__consts.py
+# Old stuff to be removed anyway.
+___consts.py
 
+# Rules for interpreter.
 pyproject.toml
 
-.__pycache__/
+# Build directory created by ableton.
+__pycache__/
 

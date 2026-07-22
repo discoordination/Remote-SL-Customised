@@ -4,7 +4,6 @@
 ####################################################################################################################
 
 """Main Remote SL controller script for Ableton Live."""
-
 import Live as Live
 
 
@@ -64,9 +63,13 @@ class RemoteSL(ControlSurface):
 			#transport = TransportComponent()
 
 			log("\t|----->Setting up free buttons...")
-			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in [Constants.Effect.NAVIGATION, Constants.Effect.SELECT_BUTTONS, Constants.Effect.UPPER_BUTTONS]]
+
+			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Effect.NAVIGATION + Constants.Effect.SELECT_BUTTONS + Constants.Effect.UPPER_BUTTONS]
+
 			self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Transport.ALL]
-			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in [Constants.Mixer.NAVIGATION, Constants.Mixer.SELECT_BUTTONS, Constants.Mixer.BUTTONS_TOP_ROW, Constants.Mixer.BUTTONS_BOTTOM_ROW]]
+
+			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Mixer.NAVIGATION+ Constants.Mixer.SELECT_BUTTONS + Constants.Mixer.BUTTONS_TOP_ROW + Constants.Mixer.BUTTONS_BOTTOM_ROW]
+
 			log("\t|----->Done setting up free buttons.")
 
 			#log("\t|----->Mapping transport buttons.")
@@ -108,7 +111,7 @@ class RemoteSL(ControlSurface):
 		# Only show message after initialization complete as it relies on c_instance...
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
 
-		# generate_stub(type(self.song), "./Song.pyi")
+		generate_stub(Live.Track, "./Track.pyi")
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
 		log("<-----Returning from RemoteSL.__init__().")
 
@@ -133,13 +136,21 @@ class RemoteSL(ControlSurface):
 		"""Build the MIDI mappings for all controller components."""
 		
 		log(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
-		super(RemoteSL, self).build_midi_map(midi_map_handle)
+
+		try:
+			super(RemoteSL, self).build_midi_map(midi_map_handle)
+
+		except Exception as e:
+			log(f"****Error in super().build_midi_map({midi_map_handle}): {e}.")
 
 		#if not self._automap_has_control:
 
-		for component in self._components:
-			if hasattr(component, "build_midi_map"): # <-- transport components don't build midi maps.
-				component.build_midi_map(midi_map_handle) #(self.handle(), midi_map_handle)
+		try:
+			for component in self._components:
+				if hasattr(component, "build_midi_map"): # <-- transport components don't build midi maps.
+					component.build_midi_map(midi_map_handle) #(self.handle(), midi_map_handle)
+		except Exception as e:
+			log(f"****Error in component.build_midi_map({midi_map_handle}): {e}")
 
 		self.set_pad_translations(Constants.PAD_TRANSLATION)
 
@@ -350,7 +361,7 @@ class RemoteSL(ControlSurface):
 			cc_no = midi_bytes[1]
 			cc_value = midi_bytes[2]
 
-			log("status byte received.")
+			log("\t----->status byte received.")
 
 			if cc_no in Constants.Effect.ALL:
 				self._effect_controller.receive_midi_cc(cc_no, cc_value)
@@ -445,7 +456,7 @@ class RemoteSL(ControlSurface):
 		"""Native callback fired by DeviceAppointer when track focus shifts."""
 
 		log(f"RemoteSL.set_appointed_device({device}) called.")
-		log(f"|----->REMOTE SL APPCON: DeviceAppointer passed device -> {str(device)}")
+		log(f"\t|----->REMOTE SL APPCON: DeviceAppointer passed device -> {str(device)}")
 		
 		# Ensure this points directly to your active effect controller instance
 		if self._effect_controller is not None:

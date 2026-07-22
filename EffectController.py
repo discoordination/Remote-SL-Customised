@@ -5,10 +5,12 @@
 
 
 """Effect-section controller logic for the Remote SL script."""
+from __future__ import annotations
 
 #from past.utils import old_div // <--- old python division not needed.
 
 import Live as Live
+
 
 #from .consts import *
 from .consts import Constants
@@ -840,7 +842,7 @@ class EffectChannelStrip(object):
 	def __init__(self, mixer_controller_parent):
 		
 		self._mixer_controller : EffectController = mixer_controller_parent
-		self._assigned_parameter: Live.DeviceParameter | None = None
+		self._assigned_parameter: Live.DeviceParameter.DeviceParameter | None = None
 		self._last_value : float = 0.0
 
 	################################################################################################################
@@ -859,12 +861,12 @@ class EffectChannelStrip(object):
 
 
 	@property
-	def assigned_parameter(self) -> 'Live.DeviceParameter | None':
+	def assigned_parameter(self) -> Live.DeviceParameter.DeviceParameter | None:
 		"""Getter: Safely returns the currently bound device parameter or None."""
 		return self._assigned_parameter
 	
 	@assigned_parameter.setter
-	def assigned_parameter(self, parameter: 'Live.DeviceParameter | None'):
+	def assigned_parameter(self, parameter: Live.DeviceParameter.DeviceParameter | None):
 		"""Setter: Safely updates the internal parameter reference reference."""
 		self._assigned_parameter = parameter
 

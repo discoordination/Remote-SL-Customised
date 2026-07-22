@@ -4,7 +4,7 @@
 """Base helper class shared by the Remote SL controller components."""
 
 from .consts import *
-import Live as Live 
+import Live as Live
 
 class RemoteSLComponent(object):
 	"""Provide common accessors and MIDI helpers for controller components."""
@@ -36,7 +36,7 @@ class RemoteSLComponent(object):
 
 
 	@property
-	def song(self) -> Live.Song:
+	def song(self) -> Live.Song.Song:
 		"""Expose the Live song object."""
 		return self._parent.song
 

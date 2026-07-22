@@ -1,8 +1,15 @@
 # consts.py
 
 
-from typing import List
+
 from dataclasses import dataclass
+from typing import List, Tuple
+
+
+# Type aliases for better type hints
+CCList = List[int]
+CCRange = List[int]
+SysexMessage = Tuple[int, ...]
 
 
 # === Helper Functions ===
@@ -17,20 +24,20 @@ class Constants:
 
 
     class Logging:
-        ENABLED = True
+        ENABLED : bool = True
 
     
     # === Hardware Constants ===
     class Hardware:
         """Basic hardware configuration."""
-        NUM_CONTROLS_PER_ROW = 8
-        NUM_CHARS_PER_DISPLAY_STRIP = 9
-        NUM_CHARS_PER_DISPLAY_LINE = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
-        NUM_CHANNELS = 15
-        MIDI_CHANNEL = 0
-        BUTTON_PRESSED = 1
-        BUTTON_RELEASED = 0
-        ABLETON_PID = 4
+        NUM_CONTROLS_PER_ROW: int = 8
+        NUM_CHARS_PER_DISPLAY_STRIP:int = 9
+        NUM_CHARS_PER_DISPLAY_LINE:int = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
+        NUM_CHANNELS:int = 15
+        MIDI_CHANNEL:int = 0
+        BUTTON_PRESSED:int = 1
+        BUTTON_RELEASED:int = 0
+        ABLETON_PID:int = 4
     
 
 
@@ -38,10 +45,10 @@ class Constants:
     # === MIDI Status Bytes ===
     class MIDI:
         """MIDI status byte constants."""
-        NOTE_OFF = 128
-        NOTE_ON = 144
-        STATUS = 176
-        SYSEX = 240
+        NOTE_OFF:int = 128
+        NOTE_ON:int = 144
+        STATUS:int = 176
+        SYSEX:int = 240
     
 
 
@@ -50,16 +57,16 @@ class Constants:
     class Transport:
         """Transport control CC numbers."""
         # Individual CCs
-        REWIND = 72
-        FORWARD = 73
-        STOP = 74
-        PLAY = 75
-        RECORD = 76
-        LOOP = 77
-        LOCK = 79
+        REWIND:int = 72
+        FORWARD:int = 73
+        STOP:int = 74
+        PLAY:int = 75
+        RECORD:int = 76
+        LOOP:int = 77
+        LOCK:int = 79
         
         # Group all transport CCs
-        ALL = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
+        ALL:CCList = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
         
         # Map CC to action name (useful for debugging)
         NAMES = {
@@ -72,7 +79,7 @@ class Constants:
             LOCK: "Lock"
         }
     
-
+    
 
 
     # === Mixer Controls ===
@@ -96,8 +103,8 @@ class Constants:
         # Navigation buttons
         NAVIGATION = [PAGE_UP, PAGE_DOWN]
         SELECT_BUTTONS = [SELECT_SLIDERS, SELECT_BUTTONS_TOP, SELECT_BUTTONS_BOTTOM]
-        FORWARDED_CCS = NAVIGATION + SELECT_BUTTONS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW
-        FORWARDED_NOTE = []
+        FORWARDED_CCS = [] #NAVIGATION + SELECT_BUTTONS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW
+        FORWARDED_NOTES = []
         
         # All mixer CCs
         ALL = SLIDERS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + NAVIGATION + SELECT_BUTTONS
@@ -111,6 +118,7 @@ class Constants:
     # === Effect Controls ===
     class Effect:
         """Effect section CC numbers."""
+
         # Individual CCs
         UPPER_BUTTON_BASE = 24
         ENCODER_BASE = 56
@@ -243,3 +251,12 @@ class Constants:
 # CTRL = Constants.ControlType
 # SL = Constants.SliderMode
 # ROW = Constants.DisplayRow
+
+
+
+# === Exports ===
+__all__ = [
+    'Constants',
+ #   'H', 'M', 'T', 'MXR', 'FX', 'SYX', 'CTRL', 'SL', 'ROW',
+    'CCList', 'CCRange', 'SysexMessage'
+]

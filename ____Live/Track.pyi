@@ -1,0 +1,10 @@
+class Track:
+    DeviceContainer: Any
+    DeviceInsertMode: Any
+    RoutingChannel: Any
+    RoutingChannelLayout: Any
+    RoutingChannelVector: Any
+    RoutingType: Any
+    RoutingTypeCategory: Any
+    RoutingTypeVector: Any
+    Track: Any
