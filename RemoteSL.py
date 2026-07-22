@@ -26,6 +26,7 @@ else:
         return func
 
 from .consts import *
+from .TransportComponent import TransportComponent
 from .DisplayController import DisplayController
 from .EffectController import EffectController
 from .MixerController import MixerController
@@ -67,32 +68,29 @@ class RemoteSL(ControlSurface):
 
 			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Effect.NAVIGATION + Constants.Effect.SELECT_BUTTONS + Constants.Effect.UPPER_BUTTONS]
 
-			self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Transport.ALL]
+			# self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Transport.ALL]
 
 			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Mixer.NAVIGATION+ Constants.Mixer.SELECT_BUTTONS + Constants.Mixer.BUTTONS_TOP_ROW + Constants.Mixer.BUTTONS_BOTTOM_ROW]
 
 			log("\t|----->Done setting up free buttons.")
 
-			#log("\t|----->Mapping transport buttons.")
-			#self.map_transport_buttons()
-			# #self._transport.set_enabled(True)
-			# self._play_button = ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_PLAY_CC)
-			# self._stop_button = ButtonElement(True, MIDI_CC_TYPE, SL_MIDI_CHANNEL, TS_STOP_CC)
-			# transport.set_play_button(self._play_button)
-			# transport.set_stop_button(self._stop_button)
-			#log("\t|----->Done mapping transport buttons.")
 
 			log("\t|----->Adding listeners...")
-			for button in list(self._fx_buttons + self._mx_buttons + self._ts_buttons):
+			for button in list(self._fx_buttons + self._mx_buttons):
 				button.add_value_listener(self.on_button_pressed_cb, identify_sender=True)
 			log("\t|----->Done adding listeners.")
 
 			log("\t|----->Building DisplayController...")
 			self._display_controller = DisplayController(self)
+
 			log("\t|----->Building EffectController...")
 			self._effect_controller = EffectController(self, self._display_controller)
+
 			log("\t|----->Building MixerController...")
 			self._mixer_controller = MixerController(self, self._display_controller)
+
+			self._transport_component = TransportComponent(name="TransportComponent", parent=self)
+			self._transport_component.set_enabled(True)
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
@@ -102,6 +100,7 @@ class RemoteSL(ControlSurface):
 			self._components.append(self._display_controller)
 		
 
+		#self._register_component(self._tranport_component)
 		self._update_hardware_delay = -1
 
 		self._device_appointer = DeviceAppointer(
@@ -112,7 +111,7 @@ class RemoteSL(ControlSurface):
 		# Only show message after initialization complete as it relies on c_instance...
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
 
-		generate_stub(Live.Track, "./Track.pyi")
+		# generate_stub(Live.Track, "./Track.pyi")
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
 		log("<-----Returning from RemoteSL.__init__().")
 
@@ -239,7 +238,7 @@ class RemoteSL(ControlSurface):
 
 		self._device_appointer.disconnect()
 
-		for button in list(self._fx_buttons + self._ts_buttons + self._mx_buttons):
+		for button in list(self._fx_buttons + self._mx_buttons): # + self._ts_buttons
 			button.remove_value_listener(self.on_button_pressed_cb)
 
 		self._send_midi(Constants.SysEx.ALL_LEDS_OFF)
@@ -282,22 +281,22 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
-	def map_transport_buttons(self):
-		"""Maps the transport buttons the modern way."""
+	# def map_transport_buttons(self):
+	# 	"""Maps the transport buttons the modern way."""
 		
-		log("map_transport_buttons() called.")
+	# 	log("map_transport_buttons() called.")
 
-		self._transport.layer = Layer(
-			play_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.PLAY),
-			stop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.STOP),
-			record_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.RECORD),
-			loop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.LOOP),
-			seek_backward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.REWIND),
-			seek_forward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.FORWARD)
-		)
+	# 	self._transport.layer = Layer(
+	# 		play_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.PLAY),
+	# 		stop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.STOP),
+	# 		record_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.RECORD),
+	# 		loop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.LOOP),
+	# 		seek_backward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.REWIND),
+	# 		seek_forward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.FORWARD)
+	# 	)
 		
 
-		self._components.append(self._transport)
+	# 	self._components.append(self._transport)
 
 
 	################################################################################################################
@@ -373,7 +372,7 @@ class RemoteSL(ControlSurface):
 				return None
 
 			if cc_no in Constants.Transport.ALL:
-				self._mixer_controller.receive_midi_cc(cc_no, cc_value)
+				self._tranport_component.handle_cc(cc_no, cc_value)
 				return None
 				
 			log("unknown MIDI message %s" % str(midi_bytes))
@@ -568,6 +567,8 @@ class RemoteSL(ControlSurface):
 		for component in self._components:
 			if hasattr(component, "update_display"): # <----Transport components don't have update display.
 				component.update_display()
+
+		self._tranport_component.update()
 
 
 	################################################################################################################

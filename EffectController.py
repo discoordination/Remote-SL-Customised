@@ -790,7 +790,7 @@ class EffectController(RemoteSLComponent):
 		# Force a single rebuild of the layouts safely (force_rebuild=True maps MIDI)
 		self.reassign_strips(force_rebuild=True)
 
-		log("<-----Returning from change_assigned_device().")
+		log("<-----Returning from EffectController.change_assigned_device().")
 
 
 	################################################################################################################

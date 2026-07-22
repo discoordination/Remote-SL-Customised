@@ -240,9 +240,9 @@ class Constants:
 
 # === Convenience Aliases ===
 # These make the code more readable while maintaining clear namespacing
-# H = Constants.Hardware
-# M = Constants.MIDI
-# T = Constants.Transport
+H = Constants.Hardware
+M = Constants.MIDI
+T = Constants.Transport
 # MXR = Constants.Mixer
 # FX = Constants.Effect
 # SYX = Constants.SysEx
