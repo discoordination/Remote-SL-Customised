@@ -20,28 +20,22 @@ else:
 
 from typing import TYPE_CHECKING
 
-from ..consts import *
+from ..consts import SLM, MXR, Constants
 from ..RemoteSLComponent import RemoteSLComponent
 
 if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
 	
 
-from ..DisplayController import DisplayController
+from .DisplayComponent import DisplayController
 from ..myLogger import log
 
 ####################################################################################################################
-
-SLIDER_MODE_VOLUME = 0
-SLIDER_MODE_PAN = 1
-SLIDER_MODE_SEND = 2
-FORW_REW_JUMP_BY_AMOUNT = 1
-
-
 ####################################################################################################################
 
 class MixerController(RemoteSLComponent):
 	"""Handle tracks, transport controls, and slider modes for the mixer section."""
+
 
 	################################################################################################################
 
@@ -55,7 +49,8 @@ class MixerController(RemoteSLComponent):
 		self._forward_button_down: bool = False
 		self._rewind_button_down: bool = False
 		self._strip_offset: int = 0
-		self._slider_mode: int = SLIDER_MODE_VOLUME
+		self._slider_mode: int = SLM.VOLUME
+		
 		self._strips = [MixerChannelStrip(self, index) for index in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
 		self._assigned_tracks = []
 		self._transport_locked: bool = False
@@ -106,7 +101,7 @@ class MixerController(RemoteSLComponent):
 		return self._slider_mode
 
 	@slider_mode.setter
-	def slider_mode(self, newMode:int):
+	def slider_mode(self, newMode: int):
 		self._slider_mode = newMode
 
 
@@ -196,7 +191,7 @@ class MixerController(RemoteSLComponent):
 		
 		self.update_selected_row_leds()
 		self.reassign_strips()
-		self._lock_enquiry_delay = 3
+		# self._lock_enquiry_delay = 3
 		
 		log("<-----Returning from MixerController.refresh_state().")
 
@@ -207,18 +202,18 @@ class MixerController(RemoteSLComponent):
 
 	@override
 	def update_display(self):
-		
-		if self._lock_enquiry_delay > 0:
-			self._lock_enquiry_delay -= 1
+		pass
+		# if self._lock_enquiry_delay > 0:
+		# 	self._lock_enquiry_delay -= 1
 			
-			if self._lock_enquiry_delay == 0:
-				self.send_midi((176, 103, 1))
+		# 	if self._lock_enquiry_delay == 0:
+		# 		self.send_midi((176, 103, 1))
 		
-		if self._rewind_button_down:
-			self.song.jump_by(-FORW_REW_JUMP_BY_AMOUNT)
+		# if self._rewind_button_down:
+		# 	self.song.jump_by(-FORW_REW_JUMP_BY_AMOUNT)
 		
-		if self._forward_button_down:
-			self.song.jump_by(FORW_REW_JUMP_BY_AMOUNT)
+		# if self._forward_button_down:
+		# 	self.song.jump_by(FORW_REW_JUMP_BY_AMOUNT)
 
 
 	################################################################################################################
@@ -311,21 +306,21 @@ class MixerController(RemoteSLComponent):
 		if cc_no == Constants.Mixer.SELECT_SLIDERS:
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				
-				self.set_slider_mode(SLIDER_MODE_VOLUME)
+				self.set_slider_mode(SLM.VOLUME)
 			
 			return None
 
 		if cc_no == Constants.Mixer.SELECT_BUTTONS_TOP:
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				
-				self.set_slider_mode(SLIDER_MODE_PAN)
+				self.set_slider_mode(SLM.PAN)
 			
 			return None
 
 		if cc_no == Constants.Mixer.SELECT_BUTTONS_BOTTOM:
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
 				
-				self.set_slider_mode(SLIDER_MODE_SEND)
+				self.set_slider_mode(SLM.SEND)
 			
 			return None
 
@@ -334,47 +329,47 @@ class MixerController(RemoteSLComponent):
 
 
 	def handle_transport_ccs(self, cc_no, cc_value):
-		
-		if cc_no == Constants.Transport.REWIND:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self._rewind_button_down = True
-				self._parent.song.jump_by(-FORW_REW_JUMP_BY_AMOUNT)
-			else:
-				self._rewind_button_down = False
-			return None
+		pass
+		# if cc_no == Constants.Transport.REWIND:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		self._rewind_button_down = True
+		# 		self._parent.song.jump_by(-FORW_REW_JUMP_BY_AMOUNT)
+		# 	else:
+		# 		self._rewind_button_down = False
+		# 	return None
 
-		if cc_no == Constants.Transport.FORWARD:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self._forward_button_down = True
-				self._parent.song.jump_by(FORW_REW_JUMP_BY_AMOUNT)
-			else:
-				self._forward_button_down = False
-			return None
+		# if cc_no == Constants.Transport.FORWARD:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		self._forward_button_down = True
+		# 		self._parent.song.jump_by(FORW_REW_JUMP_BY_AMOUNT)
+		# 	else:
+		# 		self._forward_button_down = False
+		# 	return None
 
-		if cc_no == Constants.Transport.STOP:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				#self._parent.song.is_playing = False
-				self._parent.song.stop_playing()
-			return None
+		# if cc_no == Constants.Transport.STOP:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		#self._parent.song.is_playing = False
+		# 		self._parent.song.stop_playing()
+		# 	return None
 
-		if cc_no == Constants.Transport.PLAY:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self._parent.song.start_playing()
-			return None
+		# if cc_no == Constants.Transport.PLAY:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		self._parent.song.start_playing()
+		# 	return None
 
-		if cc_no == Constants.Transport.LOOP:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self._parent.song.loop = not self._parent.song.loop
-			return None
+		# if cc_no == Constants.Transport.LOOP:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		self._parent.song.loop = not self._parent.song.loop
+		# 	return None
 
-		if cc_no == Constants.Transport.RECORD:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self._parent.song.record_mode = not self._parent.song.record_mode
-			return None
+		# if cc_no == Constants.Transport.RECORD:
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		self._parent.song.record_mode = not self._parent.song.record_mode
+		# 	return None
 
-		if cc_no == Constants.Transport.LOCK:
-			self._transport_locked = cc_value != Constants.Hardware.BUTTON_RELEASED
-			self.on_transport_lock_changed()
+		# if cc_no == Constants.Transport.LOCK:
+		# 	self._transport_locked = cc_value != Constants.Hardware.BUTTON_RELEASED
+		# 	self.on_transport_lock_changed()
 
 
 	################################################################################################################
@@ -394,15 +389,15 @@ class MixerController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def on_transport_lock_changed(self):
-		
-		for strip in self._strips:
-			strip.take_control_of_second_button(not self._transport_locked)
+	#def on_transport_lock_changed(self):
+	#	pass
+		# for strip in self._strips:
+		# 	strip.take_control_of_second_button(not self._transport_locked)
 
-		if self._transport_locked:
-			self.on_is_playing_changed()
-			self.on_loop_changed()
-			self.on_record_mode_changed()
+		# if self._transport_locked:
+		# 	self.on_is_playing_changed()
+		# 	self.on_loop_changed()
+		# 	self.on_record_mode_changed()
 
 
 	################################################################################################################
@@ -428,7 +423,7 @@ class MixerController(RemoteSLComponent):
 
 
 	def validate_strip_offset(self):
-		all_tracks = tuple(self._parent.song.visible_tracks) + tuple(self._parent.song.return_tracks) + (self._parent.song.master_track,)
+		all_tracks = tuple(self.song.visible_tracks) + tuple(self.song.return_tracks) + (self._parent.song.master_track,)
 		self._strip_offset = min(self._strip_offset, len(all_tracks) - 1)
 		self._strip_offset = max(0, self._strip_offset)
 
@@ -437,20 +432,20 @@ class MixerController(RemoteSLComponent):
 
 
 	def validate_slider_mode(self):
-		if self._slider_mode - SLIDER_MODE_SEND >= len(self._parent.song.return_tracks):
-			self._slider_mode = SLIDER_MODE_VOLUME
+		if self._slider_mode - SLM.SEND >= len(self.song.return_tracks):
+			self._slider_mode = SLM.VOLUME
 
 
 	################################################################################################################
 
 
-	def set_slider_mode(self, new_mode):
-		if self._slider_mode >= SLIDER_MODE_SEND and new_mode >= SLIDER_MODE_SEND:
+	def set_slider_mode(self, new_mode: int):
+		if self._slider_mode >= SLM.SEND and new_mode >= SLM.SEND:
 			
-			if self._slider_mode - SLIDER_MODE_SEND + 1 < len(self._parent.song.return_tracks):
+			if self._slider_mode - SLM.SEND + 1 < len(self._parent.song.return_tracks):
 				self._slider_mode += 1
 			else:
-				self._slider_mode = SLIDER_MODE_SEND
+				self._slider_mode = SLM.SEND
 			
 			self.update_selected_row_leds()
 			self.reassign_strips()
@@ -467,19 +462,19 @@ class MixerController(RemoteSLComponent):
 
 	def update_selected_row_leds(self):
 		
-		if self._slider_mode == SLIDER_MODE_VOLUME:
+		if self._slider_mode == SLM.VOLUME:
 			
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_SLIDERS, Constants.Hardware.BUTTON_PRESSED))
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_BUTTONS_TOP, Constants.Hardware.BUTTON_RELEASED))
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_BUTTONS_BOTTOM, Constants.Hardware.BUTTON_RELEASED))
 		
-		elif self._slider_mode == SLIDER_MODE_PAN:
+		elif self._slider_mode == SLM.PAN:
 			
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_SLIDERS, Constants.Hardware.BUTTON_RELEASED))
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_BUTTONS_TOP, Constants.Hardware.BUTTON_PRESSED))
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_BUTTONS_BOTTOM, Constants.Hardware.BUTTON_RELEASED))
 		
-		elif self._slider_mode >= SLIDER_MODE_SEND:
+		elif self._slider_mode >= SLM.SEND:
 			
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_SLIDERS, Constants.Hardware.BUTTON_RELEASED))
 			self.send_midi((self.cc_status_byte(), Constants.Mixer.SELECT_BUTTONS_TOP, Constants.Hardware.BUTTON_RELEASED))
@@ -628,15 +623,15 @@ class MixerChannelStrip(object):
 		if self._assigned_track is not None:
 			slider_mode = self._mixer_controller.slider_mode # What is the currently selected use for the slider.
 
-			if slider_mode == SLIDER_MODE_VOLUME:
+			if slider_mode == SLM.VOLUME:
 				return self._assigned_track.mixer_device.volume
 			
-			if slider_mode == SLIDER_MODE_PAN:
+			if slider_mode == SLM.PAN:
 				return self._assigned_track.mixer_device.panning
 			
-			if slider_mode >= SLIDER_MODE_SEND:
+			if slider_mode >= SLM.SEND:
 				
-				send_index = slider_mode - SLIDER_MODE_SEND # What is the index of send currently controlled.
+				send_index = slider_mode - SLM.SEND # What is the index of send currently controlled.
 
 				if send_index < len(self._assigned_track.mixer_device.sends):
 					return self._assigned_track.mixer_device.sends[send_index]

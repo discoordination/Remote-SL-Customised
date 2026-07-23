@@ -169,11 +169,13 @@ class TransportComponent(Component):
 		log(f"TransportComponent._on_rewind_pressed({value}) called.")
 
 		if value == H.BUTTON_PRESSED:
+			
 			self._rewind_button_down = True
 			self._fforward_button_down = False
 			self._fforward_hold_start_time = False
 			self._rewind_hold_start_time = time.time()   # Start timing
 			self._song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
+
 		else:
 			self._rewind_button_down = False
 			self._rewind_hold_start_time = None          # Reset timer
@@ -224,7 +226,7 @@ class TransportComponent(Component):
 
 	@override
 	def update(self):
-		"""Called periodically – handles rewind/forward hold behavior."""
+		"""Called periodically - handles rewind/forward hold behavior."""
 
 		#log("TransportComponent.update() called.")
 

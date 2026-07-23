@@ -27,7 +27,7 @@ else:
 
 from .consts import *
 from .Components.TransportComponent import TransportComponent
-from .DisplayController import DisplayController
+from .Components.DisplayComponent import DisplayController
 from .EffectController import EffectController
 from .Components.MixerComponent import MixerController
 

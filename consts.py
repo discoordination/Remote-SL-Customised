@@ -1,7 +1,16 @@
+####################################################################################################################
 # consts.py
+####################################################################################################################
 
-from dataclasses import dataclass
-from typing import List, Tuple
+
+#from dataclasses import dataclass
+from typing import List, Tuple, Final
+from enum import Enum, IntEnum
+
+from ableton.v3.base import as_ascii
+
+
+####################################################################################################################
 
 
 # Type aliases for better type hints
@@ -10,251 +19,301 @@ CCRange = List[int]
 SysexMessage = Tuple[int, ...]
 
 
+####################################################################################################################
+
+
 # === Helper Functions ===
-def _range(start: int, count: int = 8) -> List[int]:
-    """Create a list of CC numbers starting at 'start'."""
-    return list(range(start, start + count))
+def _range(start: int, count: int = 8) -> CCList:
+	"""Create a list of CC numbers starting at 'start'."""
+	return list(range(start, start + count))
+
+
+####################################################################################################################
 
 
 # === Main Constants Container ===
 class Constants:
-    """Container for all Remote SL Classic constants."""
+	"""Container for all Remote SL Classic constants."""
+
+	################################################################################################################
+
+	class Logging:
+		ENABLED : Final[bool] = True
 
 
-    class Logging:
-        ENABLED : bool = True
+	################################################################################################################
 
-    
-    # === Hardware Constants ===
-    class Hardware:
-        """Basic hardware configuration."""
-        NUM_CONTROLS_PER_ROW: int = 8
-        NUM_CHARS_PER_DISPLAY_STRIP:int = 9
-        NUM_CHARS_PER_DISPLAY_LINE:int = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
-        NUM_CHANNELS:int = 15
-        MIDI_CHANNEL:int = 0
-        BUTTON_PRESSED:int = 1
-        BUTTON_RELEASED:int = 0
-        ABLETON_PID:int = 4
-    
+	
+	# === Hardware Constants ===
+	class Hardware:
+		"""Basic hardware configuration."""
 
+		NUM_CONTROLS_PER_ROW: Final[int] = 8
+		NUM_CHARS_PER_DISPLAY_STRIP: Final[int] = 9
+		NUM_CHARS_PER_DISPLAY_LINE: Final[int] = NUM_CHARS_PER_DISPLAY_STRIP * NUM_CONTROLS_PER_ROW
+		NUM_CHANNELS: Final[int] = 15
+		MIDI_CHANNEL: Final[int] = 0
+		BUTTON_PRESSED: Final[int] = 1
+		BUTTON_RELEASED: Final[int] = 0
+		ABLETON_PID: Final[int] = 4
+	
 
-
-    # === MIDI Status Bytes ===
-    class MIDI:
-        """MIDI status byte constants."""
-        NOTE_OFF:int = 128
-        NOTE_ON:int = 144
-        STATUS:int = 176
-        SYSEX:int = 240
-    
+	################################################################################################################
 
 
+	# === MIDI Status Bytes ===
+	class MIDI:
+		"""MIDI status byte constants."""
 
-    # === Transport Controls ===
-    class Transport:
-        """Transport control CC numbers."""
-        # Individual CCs
-        REWIND:int = 72
-        FORWARD:int = 73
-        STOP:int = 74
-        PLAY:int = 75
-        RECORD:int = 76
-        LOOP:int = 77
-        LOCK:int = 79
-        
-        # Group all transport CCs
-        ALL:CCList = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
-        
-        # Map CC to action name (useful for debugging)
-        NAMES = {
-            REWIND: "Rewind",
-            FORWARD: "Forward", 
-            STOP: "Stop",
-            PLAY: "Play",
-            RECORD: "Record",
-            LOOP: "Loop",
-            LOCK: "Lock"
-        }
-    
-    
+		NOTE_OFF: Final[int] = 128
+		NOTE_ON: Final[int] = 144
+		STATUS: Final[int] = 176
+		SYSEX: Final[int] = 240
+	
+
+	################################################################################################################
 
 
-    # === Mixer Controls ===
-    class Mixer:
-        """Mixer section CC numbers."""
-        # Individual CCs
-        SLIDER_BASE = 16
-        BUTTONS_TOP_BASE = 40
-        BUTTON_BOTTOM_BASE = 48
-        PAGE_UP = 90
-        PAGE_DOWN = 91
-        SELECT_SLIDERS = 85
-        SELECT_BUTTONS_TOP = 86
-        SELECT_BUTTONS_BOTTOM = 87
-        
-        # Derived groups
-        SLIDERS = _range(SLIDER_BASE)  # [16-23]
-        BUTTONS_TOP_ROW = _range(BUTTONS_TOP_BASE)  # [40-47]
-        BUTTONS_BOTTOM_ROW = _range(BUTTON_BOTTOM_BASE)  # [48-55]
-        
-        # Navigation buttons
-        NAVIGATION = [PAGE_UP, PAGE_DOWN]
-        SELECT_BUTTONS = [SELECT_SLIDERS, SELECT_BUTTONS_TOP, SELECT_BUTTONS_BOTTOM]
-        FORWARDED_CCS = [] #NAVIGATION + SELECT_BUTTONS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW
-        FORWARDED_NOTES = []
-        
-        # All mixer CCs
-        ALL = SLIDERS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + NAVIGATION + SELECT_BUTTONS
-        
-        # Buttons that need LED feedback
-        LED_BUTTONS = BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + SELECT_BUTTONS
-    
+	# === Transport Controls ===
+	class Transport:
+		"""Transport control CC numbers."""
+
+		# Individual CCs
+		REWIND: Final[int] = 72
+		FORWARD: Final[int] = 73
+		STOP: Final[int] = 74
+		PLAY: Final[int] = 75
+		RECORD: Final[int] = 76
+		LOOP: Final[int] = 77
+		LOCK: Final[int] = 79
+		
+		# Group all transport CCs
+		ALL:Final[CCList] = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
+		
+		# Map CC to action name (useful for debugging)
+		NAMES: Final[dict[int, str]] = {
+			REWIND: "Rewind",
+			FORWARD: "Forward", 
+			STOP: "Stop",
+			PLAY: "Play",
+			RECORD: "Record",
+			LOOP: "Loop",
+			LOCK: "Lock"
+		}
+	
+
+	################################################################################################################	
 
 
+	# === Mixer Controls ===
+	class Mixer:
+		"""Mixer section CC numbers."""
 
-    # === Effect Controls ===
-    class Effect:
-        """Effect section CC numbers."""
+		# Individual CCs
+		SLIDER_BASE: Final[int] = 16
+		BUTTONS_TOP_BASE: Final[int] = 40
+		BUTTON_BOTTOM_BASE: Final[int] = 48
+		PAGE_UP: Final[int] = 90
+		PAGE_DOWN: Final[int] = 91
+		SELECT_SLIDERS: Final[int] = 85
+		SELECT_BUTTONS_TOP: Final[int] = 86
+		SELECT_BUTTONS_BOTTOM: Final[int] = 87
+		
+		# Derived groups
+		SLIDERS: Final[CCList] = _range(SLIDER_BASE)  # [16-23]
+		BUTTONS_TOP_ROW: Final[CCList] = _range(BUTTONS_TOP_BASE)  # [40-47]
+		BUTTONS_BOTTOM_ROW: Final[CCList] = _range(BUTTON_BOTTOM_BASE)  # [48-55]
+		
+		# Navigation buttons
+		NAVIGATION: Final[CCList] = [PAGE_UP, PAGE_DOWN]
+		SELECT_BUTTONS: Final[CCList] = [SELECT_SLIDERS, SELECT_BUTTONS_TOP, SELECT_BUTTONS_BOTTOM]
+		#FORWARDED_CCS = [] #NAVIGATION + SELECT_BUTTONS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW
+		#FORWARDED_NOTES = []
+		
+		# All mixer CCs
+		ALL: Final[CCList] = SLIDERS + BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + NAVIGATION + SELECT_BUTTONS
+		
+		# Buttons that need LED feedback
+		LED_BUTTONS: Final[CCList] = BUTTONS_TOP_ROW + BUTTONS_BOTTOM_ROW + SELECT_BUTTONS
+	
 
-        # Individual CCs
-        UPPER_BUTTON_BASE = 24
-        ENCODER_BASE = 56
-        LOWER_BUTTON_BASE = 32
-        
-        POTI_BASE = 8
-        PAGE_UP = 88
-        PAGE_DOWN = 89
-        
-        # Selector buttons
-        SELECT_TOP_BUTTON_ROW = 80
-        SELECT_ENCODER = 81
-        SELECT_BOTTOM_BUTTON_ROW = 82
-        SELECT_POTS = 83
-        SELECT_DRUM_PAD = 84
-        
-        # Grouped controls
-        UPPER_BUTTONS = _range(UPPER_BUTTON_BASE)  # [24-31]
-        ENCODERS = _range(ENCODER_BASE)  # [56-63]
-        LOWER_BUTTONS = _range(LOWER_BUTTON_BASE)  # [32-39]
-        POTS = _range(POTI_BASE)  # [8-15]
-        NAVIGATION = [PAGE_UP, PAGE_DOWN]
-        SELECT_BUTTONS = [SELECT_TOP_BUTTON_ROW, SELECT_ENCODER, SELECT_BOTTOM_BUTTON_ROW, SELECT_POTS, SELECT_DRUM_PAD]
-        
-        # All effect CCs
-        ALL = POTS + UPPER_BUTTONS + LOWER_BUTTONS + ENCODERS + NAVIGATION + SELECT_BUTTONS
-        
-        # Which rows are forwardable (no LED feedback needed)
-        FORWARDABLE = NAVIGATION + SELECT_BUTTONS + UPPER_BUTTONS
-        
-        # Drum pads (notes, not CCs)
-        DRUM_PAD_BASE_NOTE = 36
-        DRUM_PADS = _range(DRUM_PAD_BASE_NOTE)
-        
-        # Encoder feedback (MKII)
-        ENCODER_FEEDBACK_BASE = 112
-        ENCODER_FEEDBACK = _range(ENCODER_FEEDBACK_BASE)
-        
-        ENCODER_LED_MODE_BASE = 120
-        ENCODER_LED_MODES = _range(ENCODER_LED_MODE_BASE)
-    
+	################################################################################################################
 
 
-    # === System Exclusive Messages ===
-    class SysEx:
-        """System exclusive messages."""
-        WELCOME = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 1, 247)
-        GOODBYE = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 0, 247)
-        ALL_LEDS_OFF = (176, 78, 0)
-        
+	# === Effect Controls ===
+	class Effect:
+		"""Effect section CC numbers."""
+
+		# Individual CCs
+		UPPER_BUTTON_BASE: Final[int] = 24
+		ENCODER_BASE: Final[int] = 56
+		LOWER_BUTTON_BASE: Final[int] = 32
+		
+		POTS_BASE: Final[int] = 8
+		PAGE_UP: Final[int] = 88
+		PAGE_DOWN: Final[int] = 89
+		
+		# Selector buttons
+		SELECT_TOP_BUTTON_ROW: Final[int] = 80
+		SELECT_ENCODER: Final[int] = 81
+		SELECT_BOTTOM_BUTTON_ROW: Final[int] = 82
+		SELECT_POTS: Final[int] = 83
+		SELECT_DRUM_PAD: Final[int] = 84
+		
+		# Grouped controls
+		UPPER_BUTTONS: Final[CCList] = _range(UPPER_BUTTON_BASE)  # [24-31]
+		ENCODERS: Final[CCList] = _range(ENCODER_BASE)  # [56-63]
+		LOWER_BUTTONS: Final[CCList] = _range(LOWER_BUTTON_BASE)  # [32-39]
+		POTS: Final[CCList] = _range(POTS_BASE)  # [8-15]
+		NAVIGATION: Final[CCList] = [PAGE_UP, PAGE_DOWN]
+		SELECT_BUTTONS: Final[CCList] = [SELECT_TOP_BUTTON_ROW, SELECT_ENCODER, SELECT_BOTTOM_BUTTON_ROW, SELECT_POTS, SELECT_DRUM_PAD]
+		
+		# All effect CCs
+		ALL: Final[CCList] = POTS + UPPER_BUTTONS + LOWER_BUTTONS + ENCODERS + NAVIGATION + SELECT_BUTTONS
+		
+		# Which rows are forwardable (no LED feedback needed)
+		FORWARDABLE: Final[CCList] = NAVIGATION + SELECT_BUTTONS + UPPER_BUTTONS
+		
+		# Drum pads (notes, not CCs)
+		DRUM_PAD_BASE_NOTE: Final[int] = 36
+		DRUM_PADS: Final[CCList] = _range(DRUM_PAD_BASE_NOTE)
+		
+		# # Encoder feedback (MKII)
+		# ENCODER_FEEDBACK_BASE = 112
+		# ENCODER_FEEDBACK = _range(ENCODER_FEEDBACK_BASE)
+		
+		# ENCODER_LED_MODE_BASE = 120
+		# ENCODER_LED_MODES = _range(ENCODER_LED_MODE_BASE)
+	
+
+	################################################################################################################
 
 
-        # Display clear messages
-        @staticmethod
-        def clear_display(side: str = "left") -> tuple:
-            """Get display clear sysex for left or right display."""
-            base = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 2)
-            if side == "left":
-                return base + (4, 247)
-            else:
-                return base + (5, 247)
-        
+	# === System Exclusive Messages ===
+	class SysEx:
+		"""System exclusive messages."""
+		
+		WELCOME: Final[SysexMessage] = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 1, 247)
+		GOODBYE: Final[SysexMessage] = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 0, 247)
+		ALL_LEDS_OFF: Final[SysexMessage] = (176, 78, 0)
+		
+
+		############################################################################################################
 
 
-        @staticmethod
-        def display_text(text: str, row: int = 1) -> tuple:
-            """Create sysex for display text."""
-            from ableton.v3.base import as_ascii
-            
-            header = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 1, 0, row, 4)
-            text_bytes = tuple(as_ascii(text.ljust(72)[:72]))
-            return header + text_bytes + (247,)
-    
+		# Display clear messages
+		@staticmethod
+		def clear_display(side: str = "left") -> SysexMessage:
+			"""Get display clear sysex for left or right display."""
+
+			base: SysexMessage = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 2)
+
+			if side == "left":
+				return base + (4, 247)
+			else:
+				return base + (5, 247)
+		
+
+		############################################################################################################
 
 
-    # === Pad Translation ===
-    PAD_TRANSLATION = (
-        (0, 2, 36, 0),
-        (1, 2, 37, 0),
-        (2, 2, 38, 0),
-        (3, 2, 39, 0),
-        (0, 3, 40, 0),
-        (1, 3, 41, 0),
-        (2, 3, 42, 0),
-        (3, 3, 43, 0),
-    )
-    
+		@staticmethod
+		def display_text(text: str, row: int = 1) -> SysexMessage:
+			"""Create sysex for display text."""
+			
+			header: SysexMessage = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 1, 0, row, 4)
+			text_bytes = tuple(as_ascii(text.ljust(72)[:72]))
+
+			return header + text_bytes + (247,)
+
+	
+		############################################################################################################
+	
+	################################################################################################################
 
 
-    # === Control Types ===
-    class ControlType:
-        """Control type constants."""
-        POT = "pot"
-        ENCODER = "encoder"
-        BUTTON = "button"
-        SLIDER = "slider"
-        DRUM_PAD = "drum_pad"
-    
+	# === Pad Translation ===
+	PAD_TRANSLATION: Tuple[Tuple[int, ...], ...] = (
+		(0, 2, 36, 0),
+		(1, 2, 37, 0),
+		(2, 2, 38, 0),
+		(3, 2, 39, 0),
+		(0, 3, 40, 0),
+		(1, 3, 41, 0),
+		(2, 3, 42, 0),
+		(3, 3, 43, 0),
+	)
+	
+
+	################################################################################################################
 
 
+	# === Control Types ===
+	class ControlType(Enum):
+		"""Control type constants."""
 
-    # === Slider Modes ===
-    class SliderMode:
-        """Mixer slider modes."""
-        VOLUME = 0
-        PAN = 1
-        SEND = 2
-    
+		POT = "pot"
+		ENCODER = "encoder"
+		BUTTON = "button"
+		SLIDER = "slider"
+		DRUM_PAD = "drum_pad"
+	
 
-
-    # === Display Rows ===
-    class DisplayRow:
-        """Display row identifiers."""
-        TOP_LEFT = 1
-        TOP_RIGHT = 2
-        BOTTOM_LEFT = 3
-        BOTTOM_RIGHT = 4
+	################################################################################################################
 
 
+	# === Slider Modes ===
+	class SliderMode(IntEnum):
+		"""Mixer slider modes."""
+
+		VOLUME = 0
+		PAN = 1
+		SEND = 2
+
+	
+	################################################################################################################
+
+
+	# === Display Rows ===
+	class DisplayRow(Enum):
+		"""Display row identifiers."""
+
+		TOP_LEFT = 1
+		TOP_RIGHT = 2
+		BOTTOM_LEFT = 3
+		BOTTOM_RIGHT = 4
+
+
+####################################################################################################################
 
 
 # === Convenience Aliases ===
 # These make the code more readable while maintaining clear namespacing
+
 H = Constants.Hardware
 M = Constants.MIDI
 T = Constants.Transport
-# MXR = Constants.Mixer
-# FX = Constants.Effect
-# SYX = Constants.SysEx
-# CTRL = Constants.ControlType
-# SL = Constants.SliderMode
-# ROW = Constants.DisplayRow
+MXR = Constants.Mixer
+FX = Constants.Effect
+SYX = Constants.SysEx
+CTRL = Constants.ControlType
+SLM = Constants.SliderMode
+ROW = Constants.DisplayRow
 
+
+
+####################################################################################################################
 
 
 # === Exports ===
+
 __all__ = [
-    'Constants',
- #   'H', 'M', 'T', 'MXR', 'FX', 'SYX', 'CTRL', 'SL', 'ROW',
-    'CCList', 'CCRange', 'SysexMessage'
+	'Constants',
+	'H', 'M', 'T', 'MXR', 'FX', 'SYX', 'CTRL', 'SLM', 'ROW',
+	'CCList', 'CCRange', 'SysexMessage'
 ]
+
+
+####################################################################################################################
+####################################################################################################################
+
