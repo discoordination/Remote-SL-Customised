@@ -5,52 +5,69 @@
 
 """Controller logic for the Remote SL display strips."""
 
+from ableton.v2.control_surface import Component
 from ableton.v3.base import as_ascii
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
 if sys.version_info >= (3, 12):
-    from typing import override
+	from typing import override
 else:
-    def override(func):
-        return func
+	def override(func):
+		return func
 
-from .consts import *
-from .RemoteSLComponent import RemoteSLComponent
-from .myLogger import log
+from ..consts import Constants, H, SYX
+from ..myLogger import log
 
 
 ####################################################################################################################
 
 
-class DisplayController(RemoteSLComponent):
+class DisplayComponent(Component):
 	"""Handle the two display strips and their associated text updates."""
+
 
 	################################################################################################################
 
 
-	def __init__(self, remote_sl_parent):
+	def __init__(self, control_surface, name='DisplayComponent', *a, **k):
+
+		log(f"DisplayComponent.__init__({control_surface},{name}) called.")
+
+		super().__init__(name=name, *a, **k)
 		
-		RemoteSLComponent.__init__(self, remote_sl_parent)
+		self._control_surface = control_surface
+
+
+		self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
+		self.left_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+		self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
+		self.right_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 
 		self._message_popup_ticks = 0
-		self.left_strip_names = [str() for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
-		self.left_strip_parameters = [None for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
-		self.right_strip_names = [str() for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
-		self.right_strip_parameters = [None for _ in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
+		# -->> ??? self._last_send_row_id_messages = [None, [], [], [], []]
 
 		self.refresh_state()
 
+		log(f"<-----Returning from DisplayComponent.__init__({control_surface},{name})")
+
 
 	################################################################################################################
+
+	@property
+	def control_surface(self):
+		return self._control_surface
 
 
 	@override
 	def disconnect(self):
 		"""Clear the hardware displays when the controller is disconnected."""
 
-		self.send_clear_displays()
+		log(f"DisplayComponent.disconnect() called.")
+		self.clear_displays()
+
+		super().disconnect()
 
 
 	################################################################################################################
@@ -59,10 +76,12 @@ class DisplayController(RemoteSLComponent):
 	def generate_strip_string(self, display_string):
 		"""Create a padded display string for a single strip."""
 
+		# Blank returns all spaces basically.
 		if not display_string:
 			return " " * Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP
 
 		display_string = display_string.strip()
+
 		if (
 			len(display_string) > Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP - 1
 			and display_string.endswith("dB")
@@ -88,16 +107,13 @@ class DisplayController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def send_clear_displays(self):
+	def clear_displays(self, left: bool = True, right: bool = True):
 		"""Send the sysex command that clears the left and right displays."""
-		
-		start_clear_sysex = (240, 0, 32, 41, 3, 3, 18, 0)
-		
-		left_end_sysex = (Constants.Hardware.ABLETON_PID, 0, 2, 2, 4, 247)
-		right_end_sysex = (Constants.Hardware.ABLETON_PID, 0, 2, 2, 5, 247)
-		
-		self.send_midi(start_clear_sysex + left_end_sysex)
-		self.send_midi(start_clear_sysex + right_end_sysex)
+
+		if left:
+			self.control_surface.send_midi(SYX.CLEAR_LEFT_DISPLAY)
+		if right:
+			self.control_surface.send_midi(SYX.CLEAR_RIGHT_DISPLAY)
 
 
 	################################################################################################################
@@ -105,7 +121,7 @@ class DisplayController(RemoteSLComponent):
 
 	def send_display_string(self, message, row_id, offset=0):
 		"""Send a formatted display string to the hardware."""
-		
+
 		final_message = " " * offset + message
 
 		if len(final_message) < Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
@@ -122,11 +138,12 @@ class DisplayController(RemoteSLComponent):
 		sysex_text_command = (4,)
 		sysex_text = tuple(as_ascii(final_message))
 		sysex_close_up = (247,)
+
 		full_sysex = sysex_header + sysex_pos + sysex_text_command + sysex_text + sysex_close_up
 
 		if self._last_send_row_id_messages[row_id] != full_sysex:
 			self._last_send_row_id_messages[row_id] = full_sysex
-			self.send_midi(full_sysex)
+			self.control_surface.send_midi(full_sysex)
 
 
 	################################################################################################################

@@ -5,10 +5,14 @@
 
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
 from ableton.v2.control_surface.elements import ButtonElement
-import time
+
+from Live.Song import Song
 
 from ..consts import H, T
 from ..myLogger import log
+
+import time
+from typing import Final
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
@@ -25,42 +29,44 @@ else:
 
 class TransportComponent(Component):
 
-	_play_button: 		ButtonElement
-	_stop_button: 		ButtonElement
-	_record_button: 	ButtonElement 
-	_loop_button: 		ButtonElement
-	_rewind_button: 	ButtonElement 
-	_fforward_button: 	ButtonElement
 
-	_rewind_button_down : bool = False
-	_fforward_button_down : bool = False
-
-	_rewind_hold_start_time = None
-	_fforward_hold_start_time = None
-
-	FORW_REW_JUMP_BY_AMOUNT : float = 0.25
+	FORW_REW_JUMP_BY_AMOUNT : Final[float] = 0.25
 
 
 	################################################################################################################
 	
 
-	def __init__(self, name, parent, *a, **k):
+	def __init__(self, control_surface, name='TransportComponent', *a, **k):
 
-		log(f"TransportComponent.__init__({name},{parent}) called.")
+		log(f"TransportComponent.__init__({control_surface},{name}) called.")
 
-		super().__init__(name=name, *a, **k)
+		super().__init__(name=name, song=control_surface.song, *a, **k)
 
-		self._parent = parent
-		self._song = parent.song
+		self._control_surface = control_surface
+
+		self._rewind_button_down : bool = False
+		self._fforward_button_down : bool = False
+		self._rewind_hold_start_time = None
+		self._fforward_hold_start_time = None
+
+		self._play_button: 		ButtonElement
+		self._stop_button: 		ButtonElement
+		self._record_button: 	ButtonElement 
+		self._loop_button: 		ButtonElement
+		self._rewind_button: 	ButtonElement 
+		self._fforward_button: 	ButtonElement
 
 		self._create_buttons()
 		self._add_button_listeners()
 
-		log(f"<-----Returning from TransportController.__init__({name},{parent}).")
+		log(f"<-----Returning from TransportController.__init__({name},{control_surface}).")
 
 
 	################################################################################################################
 
+	@property
+	def control_surface(self):
+		return self._control_surface
 
 	# def on_enabled(self):
 		
@@ -76,7 +82,13 @@ class TransportComponent(Component):
 	# 	log("TransportComponent.on_disabled() called.")
 	# 	# Called when component is disabled – clean up
 	# 	# e.g., turn off any LEDs
-	
+	@property
+	@override
+	def song(self) -> Song:
+		result = super().song
+		assert result is not None
+		return result
+		
 
 	################################################################################################################
 
@@ -144,10 +156,10 @@ class TransportComponent(Component):
 
 	def _on_play_pressed(self, value):
 		
-		log(f"TransportComponent._on_play_pressed({value}) called.")
+		log(f"*->TransportComponent._on_play_pressed({value}) called.")
 
 		if value == H.BUTTON_PRESSED:
-			self._song.start_playing()
+			self.song.start_playing()
 
 
 	################################################################################################################
@@ -157,8 +169,8 @@ class TransportComponent(Component):
 
 		log(f"TransportComponent._on_stop_pressed({value}) called.")
 		
-		if value == H.BUTTON_PRESSED:
-			self._song.stop_playing()
+		if value == H.BUTTON_PRESSED and self.song:
+			self.song.stop_playing()
 
 
 	################################################################################################################
@@ -174,7 +186,7 @@ class TransportComponent(Component):
 			self._fforward_button_down = False
 			self._fforward_hold_start_time = False
 			self._rewind_hold_start_time = time.time()   # Start timing
-			self._song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
+			self.song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
 
 		else:
 			self._rewind_button_down = False
@@ -193,7 +205,7 @@ class TransportComponent(Component):
 			self._rewind_button_down = False
 			self._rewind_hold_start_time = False
 			self._fforward_hold_start_time = time.time()
-			self._song.jump_by(self.FORW_REW_JUMP_BY_AMOUNT)
+			self.song.jump_by(self.FORW_REW_JUMP_BY_AMOUNT)
 		else:
 			self._fforward_button_down = False
 			self._fforward_hold_start_time = None
@@ -208,7 +220,7 @@ class TransportComponent(Component):
 		log(f"TransportComponent._on_rec_pressed({value}) called.")
 
 		if value == H.BUTTON_PRESSED:
-			self._song.record_mode = not self._song.record_mode
+			self.song.record_mode = not self.song.record_mode
 
 
 	################################################################################################################
@@ -218,7 +230,7 @@ class TransportComponent(Component):
 
 		log(f"TransportComponent._on_loop_pressed({value}) called.")
 		if value == H.BUTTON_PRESSED:
-			self._song.loop = not self._song.loop
+			self.song.loop = not self.song.loop
 
 
 	################################################################################################################
@@ -256,14 +268,14 @@ class TransportComponent(Component):
 			elapsed = time.time() - self._rewind_hold_start_time
 			multiplier = get_multiplier(elapsed)
 			jump_amount = self.FORW_REW_JUMP_BY_AMOUNT * multiplier
-			self._song.jump_by(-jump_amount)
+			self.song.jump_by(-jump_amount)
 
 		# Handle forward
 		if self._fforward_button_down and self._fforward_hold_start_time is not None:
 			elapsed = time.time() - self._fforward_hold_start_time
 			multiplier = get_multiplier(elapsed)
 			jump_amount = self.FORW_REW_JUMP_BY_AMOUNT * multiplier
-			self._song.jump_by(jump_amount)
+			self.song.jump_by(jump_amount)
 
 
 	################################################################################################################

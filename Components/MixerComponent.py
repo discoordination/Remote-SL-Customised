@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
 	
 
-from .DisplayComponent import DisplayController
+from .DisplayComponent import DisplayComponent
 from ..myLogger import log
 
 ####################################################################################################################
@@ -39,13 +39,14 @@ class MixerController(RemoteSLComponent):
 
 	################################################################################################################
 
-	def __init__(self, remote_sl_parent: RemoteSL, display_controller: DisplayController):
+	def __init__(self, parent: RemoteSL):
 		"""Initialise the mixer controller state and display references."""
 		
-		RemoteSLComponent.__init__(self, remote_sl_parent)
+		RemoteSLComponent.__init__(self, parent)
 
-		self._display_controller = display_controller
-		self._parent = remote_sl_parent
+		self._parent = parent
+		self._display_controller = parent._display_component
+		
 		self._forward_button_down: bool = False
 		self._rewind_button_down: bool = False
 		self._strip_offset: int = 0

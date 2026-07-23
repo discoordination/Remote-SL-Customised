@@ -34,15 +34,15 @@ class EffectController(RemoteSLComponent):
 	"""Handle effect-device selection, bank navigation, and parameter mapping."""
 
 
-	def __init__(self, remote_sl_parent, display_controller):
+	def __init__(self, parent):
 		"""Initialise the controller state for the effect section."""
 
-		RemoteSLComponent.__init__(self, remote_sl_parent)
+		RemoteSLComponent.__init__(self, parent)
 		
 		log("EffectController.__init__() called.")
 
-		self._parent = remote_sl_parent # ref. to the owning RemoteSL object.
-		self._display_controller = display_controller # ref. to the display.
+		self._parent = parent # ref. to the owning RemoteSL object.
+		self._display_controller = parent._display_component # ref. to the display.
 		
 		self._last_selected_track = None
 		self._blank_prompt_is_drawn = False

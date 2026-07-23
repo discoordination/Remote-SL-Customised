@@ -20,14 +20,14 @@ import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
 if sys.version_info >= (3, 12):
-    from typing import override
+	from typing import override
 else:
-    def override(func):
-        return func
+	def override(func):
+		return func
 
 from .consts import *
 from .Components.TransportComponent import TransportComponent
-from .Components.DisplayComponent import DisplayController
+from .Components.DisplayComponent import DisplayComponent
 from .EffectController import EffectController
 from .Components.MixerComponent import MixerController
 
@@ -50,18 +50,18 @@ class RemoteSL(ControlSurface):
 		"""Initialise the Remote SL controller and its child components."""
 
 		log("RemoteSL.__init__() called.")
+		#self._device_initialized = False
 
 		super(RemoteSL, self).__init__(c_instance)
 
 		#self._c_instance = c_instance
-		self._handle = c_instance.handle()
-		
+		self._handle = c_instance.handle() # <--- Remove when fully upgraded
 
 		with self.component_guard():
 			
 			#self.hardware_controls = {} #dictionary to hold controls.
 			# At some point we should mebbe split _components from controllers????
-			self._components : list[Component | EffectController | MixerController | DisplayController] = []
+			#self._components : list[Component | EffectController | MixerController | DisplayComponent] = []
 			#transport = TransportComponent()
 
 			log("\t|----->Setting up free buttons...")
@@ -81,26 +81,28 @@ class RemoteSL(ControlSurface):
 			log("\t|----->Done adding listeners.")
 
 			log("\t|----->Building DisplayController...")
-			self._display_controller = DisplayController(self)
+			self._display_component = DisplayComponent(self)
 
 			log("\t|----->Building EffectController...")
-			self._effect_controller = EffectController(self, self._display_controller)
+			self._effect_controller = EffectController(self)
 
 			log("\t|----->Building MixerController...")
-			self._mixer_controller = MixerController(self, self._display_controller)
+			self._mixer_controller = MixerController(self)
 
-			self._transport_component = TransportComponent(name="TransportComponent", parent=self)
+			self._transport_component = TransportComponent(self)
+
 			self._transport_component.set_enabled(True)
+			self._display_component.set_enabled(True)
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
 		
 			self._components.append(self._effect_controller)
 			self._components.append(self._mixer_controller)
-			self._components.append(self._display_controller)
+			#self._components.append(self._display_component)
 		
 
-		#self._register_component(self._tranport_component)
+		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
 		self._update_hardware_delay = -1
 
 		self._device_appointer = DeviceAppointer(
@@ -113,6 +115,15 @@ class RemoteSL(ControlSurface):
 
 		# generate_stub(Live.Track, "./Track.pyi")
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
+		#self.set_enabled(True)
+		#self._device_initialized = True
+
+
+		log(f"num components: {len(self._components)}")
+		for comp in self._components:
+			log(comp)
+
+
 		log("<-----Returning from RemoteSL.__init__().")
 
 
@@ -209,7 +220,7 @@ class RemoteSL(ControlSurface):
 			fallback_names = ["Please select a Device in Live to edit it..."]
 			fallback_params = [None for _ in range(16)]
 			
-			self._display_controller.setup_left_display(fallback_names, fallback_params)
+			self._display_component.setup_left_display(fallback_names, fallback_params)
 
 
 	################################################################################################################
@@ -241,10 +252,29 @@ class RemoteSL(ControlSurface):
 		for button in list(self._fx_buttons + self._mx_buttons): # + self._ts_buttons
 			button.remove_value_listener(self.on_button_pressed_cb)
 
-		self._send_midi(Constants.SysEx.ALL_LEDS_OFF)
-		self._send_midi(Constants.SysEx.GOODBYE)
+		self.send_midi(Constants.SysEx.ALL_LEDS_OFF)
+		self.send_midi(Constants.SysEx.GOODBYE)
+		self._device_initialized = False
 		
 		super(RemoteSL, self).disconnect()
+
+
+	################################################################################################################
+
+	#def _add_child(self, component):
+		#component._set_enabled_recursive(self.is_enabled()) # <- Later could enable here????
+		#self._components.append(component)
+		#return component
+
+
+	def add_children(self, *a):
+		# With this we can pass this as the parent of all of the child components and gain access to song and parent.
+		# is it canonical?  maybe we would be better passing it as controller.
+		pass
+		##components = list(map(self._add_child, a))
+		#if len(components) == 1:
+		#	return components[0]
+		#return components
 
 
 	################################################################################################################
@@ -442,11 +472,18 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
-	# def send_midi(self, midi_event_bytes):
-	# 	"""Send MIDI bytes to the Live C instance when automap is not controlling them."""
+	def send_midi(self, midi_event_bytes : tuple[int, ...]):
+		"""Send MIDI bytes to the Live C instance when automap is not controlling them."""
+
+		found = False
+		for i,val in enumerate(midi_event_bytes):
+			if i != 0 and i != len(midi_event_bytes) - 1 and val > 0x7f:
+				found = True
+
+		if found:
+			log(f"Error bad MIDI message sent: {midi_event_bytes}")
 		
-	# 	if not self._automap_has_control:
-	# 		self._send_midi(midi_event_bytes)
+		self._send_midi(midi_event_bytes)
 
 
 	################################################################################################################
@@ -579,7 +616,7 @@ class RemoteSL(ControlSurface):
 
 		log("RemoteSL._update_hardware() called.")
 
-		self._send_midi(Constants.SysEx.WELCOME)
+		self.send_midi(Constants.SysEx.WELCOME)
 		for component in self._components:
 				if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
 					component.refresh_state()

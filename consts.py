@@ -192,29 +192,85 @@ class Constants:
 	# === System Exclusive Messages ===
 	class SysEx:
 		"""System exclusive messages."""
+
+		# [F0], [00, 20, 29], [03, 03], [12, 00], [04], 00, [DATA, DATA, .....], [F7]
+		# "https://fael-downloads-prod.focusrite.com/customer/prod/s3fs-public/downloads/SLMKII%20MIDI%20Programmers%20Reference.pdf"
 		
-		WELCOME: Final[SysexMessage] = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 1, 247)
-		GOODBYE: Final[SysexMessage] = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 1, 0, 247)
-		ALL_LEDS_OFF: Final[SysexMessage] = (176, 78, 0)
+		# Header
+		# F0 - 			MIDI sysex start.
+		# 00, 20, 29 - 	Novation Manufacturer ID.
+		# 03, 03 - 		Automap.
+		# 12, 00 -		VV, Bb version and beta.
+		# 04 -			Template number 04 is Ableton, 02 is Automap.
+		# F7 - 			MIDI sysex end.
+
+
+		class _():
+			START : Final[SysexMessage] = (0xF0,)
+			END : Final[SysexMessage] = (0xF7,)
+			MAN_ID : Final[SysexMessage] = (0x00, 0x20, 0x29)
+			AUTOMAP: Final[SysexMessage] = (0x03, 0x03)
+			VERSION: Final[SysexMessage] = (0x12,)
+			BETA: Final[SysexMessage] = (0x00,)
+			BLANK: Final[SysexMessage] = (0x00,)
+
+		class TEMPL():
+			ATMP: Final[SysexMessage] = (0x02,)
+			ABLTN: Final[SysexMessage] = (0x04,)
+
+		class CMD():
+			START_END: Final[SysexMessage] = (0x01,)
+			LCD_TEXT : Final[SysexMessage] = (0x02,)
+			MISC	 : Final[SysexMessage] = (0xB0,)
+
+
+		class SUB_CMD():
+			LEDS_OFF : Final[SysexMessage] = (0x4E,)
+
+			class TXT():
+				END: Final[SysexMessage] = (0x00,)
+				CUR_ADDR: Final[SysexMessage] = (0x01,)
+
+				class CLEAR():
+					BOTH: Final[SysexMessage] = (0x02, 0x01)
+					TL_BOTH: Final[SysexMessage] = (0x02, 0x02)
+					BL_BOTH: Final[SysexMessage] = (0x02, 0x03)
+					LEFT: Final[SysexMessage] = (0x02, 0x04) 
+					RIGHT: Final[SysexMessage] = (0x02, 0x05)
+					TL_LEFT: Final[SysexMessage] = (0x02, 0x06) 
+					BL_LEFT: Final[SysexMessage] = (0x02, 0x07)
+					TL_RIGHT: Final[SysexMessage] = (0x02, 0x08)
+					BL_RIGHT: Final[SysexMessage] = (0x02, 0x09)
+					FRM_CURS: Final[SysexMessage] = (0x02, 0x0A) # .... Then for num chars in nxt byte
+
+				STR: Final[SysexMessage] = (0x04,)
+
+			class LCD():
+				class LEFT:
+					TOP: Final[SysexMessage] = (0x01,)
+					BOTTOM: Final[SysexMessage] = (0x03,)
+				class RIGHT:
+					TOP: Final[SysexMessage] = (0x02,)
+					BOTTOM: Final[SysexMessage] = (0x04,)
+
+
+		ROOT : Final[SysexMessage] = _.MAN_ID + _.AUTOMAP + _.VERSION + _.BETA + TEMPL.ABLTN + _.BLANK
+		BEGIN_MSG: Final[SysexMessage] = _.START + ROOT
+		END_MSG: Final[SysexMessage] = _.END
+
+		WELCOME: Final[SysexMessage] = BEGIN_MSG + CMD.START_END + (0x01,) + END_MSG # 01 go to ableton mode
+		GOODBYE: Final[SysexMessage] = BEGIN_MSG + CMD.START_END + (0x00,) + END_MSG # 00 show ableton is offline
+
+		# I am not sure whether it should be BF instead of B0.
+		ALL_LEDS_OFF: Final[SysexMessage] = BEGIN_MSG + CMD.MISC + SUB_CMD.LEDS_OFF + END_MSG
+
+		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
+		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG
+		CLEAR_BOTH_DISPLAYS: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BOTH + END_MSG
 		
 
 		############################################################################################################
 
-
-		# Display clear messages
-		@staticmethod
-		def clear_display(side: str = "left") -> SysexMessage:
-			"""Get display clear sysex for left or right display."""
-
-			base: SysexMessage = (240, 0, 32, 41, 3, 3, 18, 0, 4, 0, 2, 2)
-
-			if side == "left":
-				return base + (4, 247)
-			else:
-				return base + (5, 247)
-		
-
-		############################################################################################################
 
 
 		@staticmethod
