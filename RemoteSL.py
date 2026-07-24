@@ -263,8 +263,6 @@ class RemoteSL(ControlSurface):
 		for button in list(self._fx_buttons + self._mx_buttons): # + self._ts_buttons
 			button.remove_value_listener(self.on_button_pressed_cb)
 
-		self._display_component.show_timed_message("Goodbye from Ableton.", 1)
-		time.sleep(4)
 		super(RemoteSL, self).disconnect()
 
 		self.send_midi(MIDI.ALL_LEDS_OFF)

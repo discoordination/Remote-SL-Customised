@@ -8,6 +8,7 @@
 from ableton.v2.control_surface import Component
 from ableton.v3.base import as_ascii
 
+from enum import Enum, IntEnum
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
@@ -19,6 +20,25 @@ else:
 
 from ..consts import Constants, H, SYX
 from ..myLogger import log
+
+
+
+####################################################################################################################
+
+
+class DISPLAY(Enum):
+	LEFT = 0
+	RIGHT = 1
+
+
+####################################################################################################################
+
+
+class ROW(IntEnum):
+	TL = 0x01
+	TR = 0x02
+	BL = 0x03
+	BR = 0x04
 
 
 ####################################################################################################################
@@ -56,9 +76,45 @@ class DisplayComponent(Component):
 
 	################################################################################################################
 
+
 	@property
 	def control_surface(self):
 		return self._control_surface
+
+
+	################################################################################################################
+
+
+	def clear_display_row(self, row: ROW):
+		
+		if (row == ROW.TL):
+			self.control_surface.send_midi(SYX.CLEAR_ROW_TL)
+		elif (row == ROW.TR):
+			self.control_surface.send_midi(SYX.CLEAR_ROW_TR)
+		elif (row == ROW.BL):
+			self.control_surface.send_midi(SYX.CLEAR_ROW_BL)
+		elif (row == ROW.BR):
+			self.control_surface.send_midi(SYX.CLEAR_ROW_BR)
+
+
+	################################################################################################################
+		
+
+	def clear_display(self, display: DISPLAY):
+		
+		if(display == DISPLAY.LEFT):
+			self.control_surface.send_midi(SYX.CLEAR_LEFT_DISPLAY)
+		else:
+			self.control_surface.send_midi(SYX.CLEAR_RIGHT_DISPLAY)
+
+
+	################################################################################################################
+	
+
+	def clear_displays(self):
+		"""Send the sysex command that clears the left and right displays."""
+
+		self.control_surface.send_midi(SYX.CLEAR_BOTH_DISPLAYS)
 
 
 	################################################################################################################
@@ -70,6 +126,7 @@ class DisplayComponent(Component):
 
 		log(f"DisplayComponent.disconnect() called.")
 		self.clear_displays()
+		self.show_offline_message()
 
 		super().disconnect()
 
@@ -95,18 +152,6 @@ class DisplayComponent(Component):
 
 		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
 
-
-
-	################################################################################################################
-
-
-	def clear_displays(self, left: bool = True, right: bool = True):
-		"""Send the sysex command that clears the left and right displays."""
-
-		if left:
-			self.control_surface.send_midi(SYX.CLEAR_LEFT_DISPLAY)
-		if right:
-			self.control_surface.send_midi(SYX.CLEAR_RIGHT_DISPLAY)
 
 
 	################################################################################################################
@@ -147,6 +192,7 @@ class DisplayComponent(Component):
 
 		if self._last_send_row_id_messages[row_id] != full_sysex:
 			self._last_send_row_id_messages[row_id] = full_sysex
+			log("\t|----->Sending display string.")
 			self.control_surface.send_midi(full_sysex)
 
 
@@ -171,6 +217,13 @@ class DisplayComponent(Component):
 
 		self.right_strip_names = names
 		self.right_strip_parameters = parameters
+
+
+	################################################################################################################
+
+
+	def show_offline_message(self):
+		self.write_full_row_string_centred("Ableton is OFFLINE", ROW.TL, ROW.TR)
 
 
 	################################################################################################################
@@ -267,11 +320,32 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def write_full_row_string(self, text, row_id):
+	def write_full_row_string(self, text: str, *rows: ROW):
 		"""Public endpoint to print a continuous, perfectly spaced phrase across a full row."""
 
+		log(f"DisplayComponent.write_full_row_string({text}, {rows}) called.")
+
+		if rows.count == 0:
+			rows = (ROW.TL,)
+
 		# Safely pass the text string down to the internal private Sysex compiler
-		self.send_display_string(text, row_id, offset=0)
+		for row in rows:
+			self.send_display_string(text, row.value, offset=0)
+
+
+	################################################################################################################
+
+
+	def write_full_row_string_centred(self, text: str, *rows: ROW):
+
+		log(f"DisplayComponent.write_full_row_string_centred({text}, {rows}) called.")
+
+		if rows.count == 0:
+			rows = (ROW.TL,)
+
+		centred = text.center(Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE)
+
+		self.write_full_row_string(centred, *rows)
 
 
 	################################################################################################################

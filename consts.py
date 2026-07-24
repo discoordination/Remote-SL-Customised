@@ -64,32 +64,6 @@ class Constants:
 	################################################################################################################
 
 
-	# === MIDI Status Bytes ===
-	class MIDI:
-		"""MIDI status byte constants."""
-
-		NOTE_OFF: Final[int] = 128
-		NOTE_ON: Final[int] = 144
-		STATUS: Final[int] = 0xB0
-		SYSEX: Final[int] = 240
-
-
-		class CMD:
-
-			class _CH:
-				ABL: Final[MIDIByte] = (0xB0,)
-			class _CMD:
-				LEDS_OFF: Final[MIDIData] = (0x4e, 0x00)
-
-			
-			ALL_LEDS_OFF: Final[MIDIMessage] = _CH.ABL + _CMD.LEDS_OFF
-
-			del _CH, _CMD
-	
-
-	################################################################################################################
-
-
 	# === Transport Controls ===
 	class Transport:
 		"""Transport control CC numbers."""
@@ -205,6 +179,33 @@ class Constants:
 	################################################################################################################
 
 
+	# === MIDI Status Bytes ===
+	class MIDI:
+		"""MIDI status byte constants."""
+
+		NOTE_OFF: Final[int] = 128
+		NOTE_ON: Final[int] = 144
+		STATUS: Final[int] = 0xB0
+		SYSEX: Final[int] = 240
+
+
+		class CMD:
+
+			class _CH:
+				ABL: Final[MIDIByte] = (0xB0,)
+			class _CMD:
+				LEDS_OFF: Final[MIDIData] = (0x4e, 0x00)
+
+			
+			ALL_LEDS_OFF: Final[MIDIMessage] = _CH.ABL + _CMD.LEDS_OFF
+
+			del _CH, _CMD
+	
+
+	################################################################################################################
+
+
+
 	# === System Exclusive Messages ===
 	class SysEx:
 		"""System exclusive messages."""
@@ -249,14 +250,14 @@ class Constants:
 
 				class CLEAR():
 					BOTH: Final[SysexMessage] = (0x02, 0x01)
-					TL_BOTH: Final[SysexMessage] = (0x02, 0x02)
-					BL_BOTH: Final[SysexMessage] = (0x02, 0x03)
+					TOP_BOTH: Final[SysexMessage] = (0x02, 0x02)
+					BOTTOM_BOTH: Final[SysexMessage] = (0x02, 0x03)
 					LEFT: Final[SysexMessage] = (0x02, 0x04) 
 					RIGHT: Final[SysexMessage] = (0x02, 0x05)
-					TL_LEFT: Final[SysexMessage] = (0x02, 0x06) 
-					BL_LEFT: Final[SysexMessage] = (0x02, 0x07)
-					TL_RIGHT: Final[SysexMessage] = (0x02, 0x08)
-					BL_RIGHT: Final[SysexMessage] = (0x02, 0x09)
+					TOP_LEFT: Final[SysexMessage] = (0x02, 0x06) 
+					BTM_LEFT: Final[SysexMessage] = (0x02, 0x07)
+					TOP_RIGHT: Final[SysexMessage] = (0x02, 0x08)
+					BTM_RIGHT: Final[SysexMessage] = (0x02, 0x09)
 					FRM_CURS: Final[SysexMessage] = (0x02, 0x0A) # .... Then for num chars in nxt byte
 
 				STR: Final[SysexMessage] = (0x04,)
@@ -284,6 +285,10 @@ class Constants:
 		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
 		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG
 		CLEAR_BOTH_DISPLAYS: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BOTH + END_MSG
+		CLEAR_ROW_TL: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.TOP_LEFT + END_MSG
+		CLEAR_ROW_TR: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.TOP_RIGHT + END_MSG
+		CLEAR_ROW_BL: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BTM_LEFT + END_MSG
+		CLEAR_ROW_BR: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BTM_RIGHT + END_MSG
 		
 
 		############################################################################################################
