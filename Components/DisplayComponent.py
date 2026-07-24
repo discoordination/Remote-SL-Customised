@@ -39,14 +39,15 @@ class DisplayComponent(Component):
 		
 		self._control_surface = control_surface
 
-
 		self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
 		self.left_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 		self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
 		self.right_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 
-		self._message_popup_ticks = 0
-		# -->> ??? self._last_send_row_id_messages = [None, [], [], [], []]
+		self._message_popup_ticks = 0 	# How long to display a popup message for? 
+
+		# looks like an unknown object and 4 lines
+		self._last_send_row_id_messages = [None, [], [], [], []] # <-- Refreshed in refresh_state...
 
 		self.refresh_state()
 
@@ -58,6 +59,9 @@ class DisplayComponent(Component):
 	@property
 	def control_surface(self):
 		return self._control_surface
+
+
+	################################################################################################################
 
 
 	@override
@@ -92,17 +96,6 @@ class DisplayComponent(Component):
 		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
 
 
-	################################################################################################################
-
-
-	@override
-	def refresh_state(self):
-		"""Reset the cached display state for the rows."""
-
-		log("DisplayController.refresh_state() called.")
-		self._last_send_row_id_messages = [None, [], [], [], []]
-		log("<-----Returning from DisplayController.refresh_state().")
-
 
 	################################################################################################################
 
@@ -115,6 +108,17 @@ class DisplayComponent(Component):
 		if right:
 			self.control_surface.send_midi(SYX.CLEAR_RIGHT_DISPLAY)
 
+
+	################################################################################################################
+
+
+	@override
+	def refresh_state(self):
+		"""Reset the cached display state for the rows."""
+
+		log("DisplayController.refresh_state() called.")
+		self._last_send_row_id_messages = [None, [], [], [], []] # <------ Resets this object.
+		log("<-----Returning from DisplayController.refresh_state().")
 
 	################################################################################################################
 
@@ -152,9 +156,9 @@ class DisplayComponent(Component):
 	def setup_left_display(self, names, parameters):
 		"""Store the names and parameter labels shown on the left display."""
 
-		log(f"--- DISPLAY CONTROLLER INCOMING ---")
-		log(f"PARAM_NAMES VAL: {str(names)} (Length: {len(names)})")
-		log(f"PARAMETERS VAL: {str(parameters)} (Length: {len(parameters)})")
+		# log(f"--- DISPLAY CONTROLLER INCOMING ---")
+		# log(f"PARAM_NAMES VAL: {str(names)} (Length: {len(names)})")
+		# log(f"PARAMETERS VAL: {str(parameters)} (Length: {len(parameters)})")
 		# ------------------------------------------------------------------------
 		self.left_strip_names = names
 		self.left_strip_parameters = parameters
@@ -191,8 +195,10 @@ class DisplayComponent(Component):
 
 
 	@override
-	def update_display(self):
+	def update(self):
 		"""Refresh the display content for the four display rows natively."""
+
+		super().update()
 
 		# --- THE CENTRAL NOTIFICATION TIMER GATE ---
  
@@ -207,8 +213,8 @@ class DisplayComponent(Component):
 			
 			# Target the name-mangled private mirror storage dictionary
 			# and fill it with blank strings so the redraw validation check triggers instantly
-			
-			#if hasattr(self, '_last_send_row_id_messages'):
+						
+			# not sure what we are doing here....
 			for row_key in (1, 2, 3, 4):
 				self._last_send_row_id_messages[row_key] = ""
 					
@@ -218,6 +224,7 @@ class DisplayComponent(Component):
 
 		# --------------------------------------------
 
+		# rows are top_left, top_right, bottom_left, bottom_right
 		for row_id in (1, 2, 3, 4):
 			message_string = ""
 			if row_id in (1, 2):
@@ -238,6 +245,7 @@ class DisplayComponent(Component):
 					for name in strip_names:
 						message_string += self.generate_strip_string(name)
 				else:
+					log("Error: What am i seeing here????")
 					message_string = self.generate_strip_string("") * Constants.Hardware.NUM_CONTROLS_PER_ROW
 				self.send_display_string(message_string, row_id, offset=0)
 				continue
@@ -264,6 +272,9 @@ class DisplayComponent(Component):
 
 		# Safely pass the text string down to the internal private Sysex compiler
 		self.send_display_string(text, row_id, offset=0)
+
+
+	################################################################################################################
 
 
 

@@ -70,3 +70,7 @@ class RemoteSLComponent(object):
 	def update_display(self):
 		"""Update any controller display content."""
 		pass
+
+	@property
+	def is_private(self):
+		return False

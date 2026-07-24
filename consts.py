@@ -17,6 +17,9 @@ from ableton.v3.base import as_ascii
 CCList = List[int]
 CCRange = List[int]
 SysexMessage = Tuple[int, ...]
+MIDIMessage = Tuple[int, int, int]
+MIDIData = Tuple[int,int]
+MIDIByte = Tuple[int]
 
 
 ####################################################################################################################
@@ -67,8 +70,21 @@ class Constants:
 
 		NOTE_OFF: Final[int] = 128
 		NOTE_ON: Final[int] = 144
-		STATUS: Final[int] = 176
+		STATUS: Final[int] = 0xB0
 		SYSEX: Final[int] = 240
+
+
+		class CMD:
+
+			class _CH:
+				ABL: Final[MIDIByte] = (0xB0,)
+			class _CMD:
+				LEDS_OFF: Final[MIDIData] = (0x4e, 0x00)
+
+			
+			ALL_LEDS_OFF: Final[MIDIMessage] = _CH.ABL + _CMD.LEDS_OFF
+
+			del _CH, _CMD
 	
 
 	################################################################################################################
@@ -225,7 +241,7 @@ class Constants:
 
 
 		class SUB_CMD():
-			LEDS_OFF : Final[SysexMessage] = (0x4E,)
+			#LEDS_OFF : Final[SysexMessage] = (0x4E,)
 
 			class TXT():
 				END: Final[SysexMessage] = (0x00,)
@@ -255,18 +271,19 @@ class Constants:
 
 
 		ROOT : Final[SysexMessage] = _.MAN_ID + _.AUTOMAP + _.VERSION + _.BETA + TEMPL.ABLTN + _.BLANK
-		BEGIN_MSG: Final[SysexMessage] = _.START + ROOT
+		BEG_SYX: Final[SysexMessage] = _.START + ROOT
 		END_MSG: Final[SysexMessage] = _.END
 
-		WELCOME: Final[SysexMessage] = BEGIN_MSG + CMD.START_END + (0x01,) + END_MSG # 01 go to ableton mode
-		GOODBYE: Final[SysexMessage] = BEGIN_MSG + CMD.START_END + (0x00,) + END_MSG # 00 show ableton is offline
+		WELCOME: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x01,) + END_MSG # 01 go to ableton mode
+		GOODBYE: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x00,) + END_MSG # 00 show ableton is offline
 
-		# I am not sure whether it should be BF instead of B0.
-		ALL_LEDS_OFF: Final[SysexMessage] = BEGIN_MSG + CMD.MISC + SUB_CMD.LEDS_OFF + END_MSG
+		GOOD_BYE_SYSEX_MESSAGE = (0xF0, 0x00, 0x20, 0x29, 0x03, 0x03, 0x12, 0x00, 0x04, 0x00, 0x01, 0x00, 0xF7)
+		if GOOD_BYE_SYSEX_MESSAGE != GOODBYE:
+			raise ValueError("Bad GOODBYE Sysex message.")
 
-		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
-		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG
-		CLEAR_BOTH_DISPLAYS: Final[SysexMessage] = BEGIN_MSG + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BOTH + END_MSG
+		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
+		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG
+		CLEAR_BOTH_DISPLAYS: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.BOTH + END_MSG
 		
 
 		############################################################################################################
@@ -348,6 +365,7 @@ class Constants:
 
 H = Constants.Hardware
 M = Constants.MIDI
+MIDI = Constants.MIDI.CMD
 T = Constants.Transport
 MXR = Constants.Mixer
 FX = Constants.Effect

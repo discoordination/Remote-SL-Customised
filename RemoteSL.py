@@ -17,6 +17,8 @@ from ableton.v2.control_surface import ControlSurface, Component, Layer, Skin, M
 from ableton.v2.control_surface.elements import ButtonElement, EncoderElement
 
 import sys
+import time
+
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
 if sys.version_info >= (3, 12):
@@ -25,7 +27,7 @@ else:
 	def override(func):
 		return func
 
-from .consts import *
+from .consts import Constants, MIDI
 from .Components.TransportComponent import TransportComponent
 from .Components.DisplayComponent import DisplayComponent
 from .EffectController import EffectController
@@ -60,9 +62,11 @@ class RemoteSL(ControlSurface):
 		with self.component_guard():
 			
 			#self.hardware_controls = {} #dictionary to hold controls.
+
 			# At some point we should mebbe split _components from controllers????
-			#self._components : list[Component | EffectController | MixerController | DisplayComponent] = []
-			#transport = TransportComponent()
+			# TODO: self._components should be removed once all controllers are components. 
+			self._components : list[Component | EffectController | MixerController] = []
+		
 
 			log("\t|----->Setting up free buttons...")
 
@@ -80,7 +84,7 @@ class RemoteSL(ControlSurface):
 				button.add_value_listener(self.on_button_pressed_cb, identify_sender=True)
 			log("\t|----->Done adding listeners.")
 
-			log("\t|----->Building DisplayController...")
+			log("\t|----->Building DisplayComponent...")
 			self._display_component = DisplayComponent(self)
 
 			log("\t|----->Building EffectController...")
@@ -89,6 +93,7 @@ class RemoteSL(ControlSurface):
 			log("\t|----->Building MixerController...")
 			self._mixer_controller = MixerController(self)
 
+			log("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
 
 			self._transport_component.set_enabled(True)
@@ -99,11 +104,10 @@ class RemoteSL(ControlSurface):
 		
 			self._components.append(self._effect_controller)
 			self._components.append(self._mixer_controller)
-			#self._components.append(self._display_component)
 		
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
-		self._update_hardware_delay = -1
+		# self._update_hardware_delay = -1 # removed as why drop a tick here? to save 1 tick???
 
 		self._device_appointer = DeviceAppointer(
 			song=(self.song),
@@ -113,16 +117,23 @@ class RemoteSL(ControlSurface):
 		# Only show message after initialization complete as it relies on c_instance...
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
 
+		# Do some quick checks.
+
+		if self._enabled == False:
+			raise ValueError(f"Error: Object {self} is not enabled when it should be.")
+
+		if len(self.components) != 4:
+			log(f"Error: num components is {len(self._components)} when it should be 4.")
+			raise ValueError(f"Error: num components is {len(self._components)} when it should be 4.")
+
+		for comp in self._components:
+			log(comp)
+			#if comp._enabled == False:
+			#	raise ValueError(f"Error: Object {comp} is not enabled when it should be.")
+
 		# generate_stub(Live.Track, "./Track.pyi")
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
 		#self.set_enabled(True)
-		#self._device_initialized = True
-
-
-		log(f"num components: {len(self._components)}")
-		for comp in self._components:
-			log(comp)
-
 
 		log("<-----Returning from RemoteSL.__init__().")
 
@@ -252,11 +263,15 @@ class RemoteSL(ControlSurface):
 		for button in list(self._fx_buttons + self._mx_buttons): # + self._ts_buttons
 			button.remove_value_listener(self.on_button_pressed_cb)
 
-		self.send_midi(Constants.SysEx.ALL_LEDS_OFF)
-		self.send_midi(Constants.SysEx.GOODBYE)
-		self._device_initialized = False
-		
+		self._display_component.show_timed_message("Goodbye from Ableton.", 1)
+		time.sleep(4)
 		super(RemoteSL, self).disconnect()
+
+		self.send_midi(MIDI.ALL_LEDS_OFF)
+		self.send_midi(Constants.SysEx.GOODBYE) # After super so it's done after clear screen.
+		
+
+		
 
 
 	################################################################################################################
@@ -267,10 +282,10 @@ class RemoteSL(ControlSurface):
 		#return component
 
 
-	def add_children(self, *a):
+	#def add_children(self, *a):
 		# With this we can pass this as the parent of all of the child components and gain access to song and parent.
 		# is it canonical?  maybe we would be better passing it as controller.
-		pass
+		#pass
 		##components = list(map(self._add_child, a))
 		#if len(components) == 1:
 		#	return components[0]
@@ -419,7 +434,7 @@ class RemoteSL(ControlSurface):
 				#support_mkII = midi_bytes[6] * 100 + midi_bytes[7] >= 1800
 				
 				#if not self._automap_has_control:
-				self.send_midi(Constants.SysEx.ALL_LEDS_OFF)
+				self.send_midi(MIDI.ALL_LEDS_OFF)
 				
 				for component in self._components:
 					
@@ -595,18 +610,25 @@ class RemoteSL(ControlSurface):
 		"""Update the display and decrement the hardware refresh timer."""
 
 		#log(f"RemoteSL.update_display() called.") <---- not logged as on a timer.
+		super().update_display()
 
-		if self._update_hardware_delay > 0:
+		if self._update_hardware_delay > 0:		# <---- somehwere there is a timer tick for this
 			self._update_hardware_delay -= 1
 			if self._update_hardware_delay == 0:
 				self.update_hardware()
 
-		for component in self._components:
-			if hasattr(component, "update_display"): # <----Transport components don't have update display.
+
+		for component in self._components: # <- update eventually to .components
+			if hasattr(component, "update_display"):
 				component.update_display()
+			elif hasattr(component, "update"):
+				component.update()
 
-		self._transport_component.update()
 
+	@override
+	def update(self):
+		log("*->RemoteSL.update() called.")
+		super().update()
 
 	################################################################################################################
 
@@ -614,13 +636,24 @@ class RemoteSL(ControlSurface):
 	def update_hardware(self):
 		"""Initialise the hardware and refresh each controller component."""
 
-		log("RemoteSL._update_hardware() called.")
+		log("RemoteSL.update_hardware() called.")
 
 		self.send_midi(Constants.SysEx.WELCOME)
+		
 		for component in self._components:
-				if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
-					component.refresh_state()
+			#TODO: Review if refresh state is necessary or a good idea.	
+			if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
+				component.refresh_state()
 
+		# If you were regularly to call this function then you would need to reset the timer here.
+		# Correction the update hardware timer is called in refresh_state() and is set to 5.
+
+
+
+
+	# def send_midi_logged(self, name: str, midi_bytes):
+	# 	log(f"MIDI MESSAGE: {name}: {midi_bytes}")
+	# 	self.send_midi(midi_bytes)
 
 
 ####################################################################################################################

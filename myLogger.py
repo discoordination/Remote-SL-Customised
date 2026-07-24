@@ -9,6 +9,7 @@ from .consts import *
 # For Windows: Use a path like r"C:\Users\YourName\Desktop\script_debug.txt"
 # For Mac: Use a path like "/Users/YourName/Desktop/script_debug.txt"
 LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
+MID_LOG_PATH = r"C:\\Users\\willw\\Desktop\\midi_debug.txt"
 DUMPED_ATTRIBUTES_PATH = r"C:\\Users\willw\Desktop\\"
 
 

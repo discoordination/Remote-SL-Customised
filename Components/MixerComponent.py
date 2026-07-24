@@ -46,7 +46,7 @@ class MixerController(RemoteSLComponent):
 
 		self._parent = parent
 		self._display_controller = parent._display_component
-		
+
 		self._forward_button_down: bool = False
 		self._rewind_button_down: bool = False
 		self._strip_offset: int = 0
@@ -499,6 +499,7 @@ class MixerController(RemoteSLComponent):
 			if not self._parent.song.record_mode:
 				record_value = Constants.Hardware.BUTTON_RELEASED
 
+			# update the record button light.
 			self.send_midi((self.cc_status_byte(), record_cc, record_value))
 
 
@@ -556,6 +557,17 @@ class MixerController(RemoteSLComponent):
 				
 				if candidate.can_be_armed and candidate.arm and candidate != track:
 					candidate.arm = False
+
+
+	################################################################################################################
+
+
+	def update(self):
+		log("MixerComponent.update() called.")
+
+
+
+	################################################################################################################
 
 
 
