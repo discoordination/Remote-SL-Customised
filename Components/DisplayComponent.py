@@ -76,6 +76,8 @@ class DisplayComponent(Component):
 
 		#self.refresh_state()
 
+		# _dirty if anything changes this would be a simpler way of dealing with things changing or not.
+
 		log(f"<-----Returning from DisplayComponent.__init__({control_surface},{name})")
 
 

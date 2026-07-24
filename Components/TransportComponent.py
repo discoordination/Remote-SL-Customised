@@ -8,7 +8,7 @@ from ableton.v2.control_surface.elements import ButtonElement
 
 from Live.Song import Song
 
-from ..consts import H, T
+from ..consts import H, T, M
 from ..myLogger import log
 
 import time
@@ -58,6 +58,8 @@ class TransportComponent(Component):
 
 		self._create_buttons()
 		self._add_button_listeners()
+		self.song.add_record_mode_listener(self.on_record_mode_changed)
+
 
 		log(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
 
@@ -99,6 +101,7 @@ class TransportComponent(Component):
 		log("TransportComponent.disconnect() called.")
 
 		self._remove_button_listeners()
+		self.song.remove_record_mode_listener(self.on_record_mode_changed)
 
 		super().disconnect()
 
@@ -176,26 +179,6 @@ class TransportComponent(Component):
 	################################################################################################################
 
 
-	def _on_rewind_pressed(self, value):
-
-		log(f"TransportComponent._on_rewind_pressed({value}) called.")
-
-		if value == H.BUTTON_PRESSED:
-			
-			self._rewind_button_down = True
-			self._fforward_button_down = False
-			self._fforward_hold_start_time = False
-			self._rewind_hold_start_time = time.time()   # Start timing
-			self.song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
-
-		else:
-			self._rewind_button_down = False
-			self._rewind_hold_start_time = None          # Reset timer
-
-
-	################################################################################################################
-
-
 	def _on_fforward_pressed(self, value):
 
 		log(f"TransportComponent._on_fforward_pressed({value}) called.")
@@ -211,18 +194,6 @@ class TransportComponent(Component):
 			self._fforward_hold_start_time = None
 			
 
-
-	################################################################################################################
-
-
-	def _on_rec_pressed(self, value):
-
-		log(f"TransportComponent._on_rec_pressed({value}) called.")
-
-		if value == H.BUTTON_PRESSED:
-			self.song.record_mode = not self.song.record_mode
-
-
 	################################################################################################################
 
 
@@ -231,6 +202,48 @@ class TransportComponent(Component):
 		log(f"TransportComponent._on_loop_pressed({value}) called.")
 		if value == H.BUTTON_PRESSED:
 			self.song.loop = not self.song.loop
+
+
+	################################################################################################################
+
+
+	def on_record_mode_changed(self):
+		
+		# update the record button light. T.RECORD is the same for the button in one way and the light in the other.
+		self.control_surface.send_midi((M.STATUS + H.MIDI_CHANNEL, T.RECORD, self.song.record_mode))
+							 
+
+	################################################################################################################
+
+
+	def _on_rec_pressed(self, value):
+
+		log(f"TransportComponent._on_rec_pressed({value}) called.")
+
+		# here we could contextually either record the song or record a clip if a clip is selected and in clip view.
+
+		if value == H.BUTTON_PRESSED:
+			self.song.record_mode = not self.song.record_mode
+
+		
+	################################################################################################################
+
+
+	def _on_rewind_pressed(self, value):
+
+		log(f"TransportComponent._on_rewind_pressed({value}) called.")
+
+		if value == H.BUTTON_PRESSED:
+			
+			self._rewind_button_down = True
+			self._fforward_button_down = False
+			self._fforward_hold_start_time = False
+			self._rewind_hold_start_time = time.time()   # Start timing
+			self.song.jump_by(-self.FORW_REW_JUMP_BY_AMOUNT)
+
+		else:
+			self._rewind_button_down = False
+			self._rewind_hold_start_time = None          # Reset timer
 
 
 	################################################################################################################
@@ -279,14 +292,6 @@ class TransportComponent(Component):
 
 
 	################################################################################################################
-
-
-	# def send_midi(self, midi_bytes):
-		
-	# 	log("TransportComponent.send_midi() called.")
-
-	# 	if self._parent:
-	# 		self._parent._send_midi(midi_bytes)
 
 
 ####################################################################################################################

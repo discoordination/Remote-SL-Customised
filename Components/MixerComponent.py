@@ -59,8 +59,7 @@ class MixerController(RemoteSLComponent):
 		self._lock_enquiry_delay: int = 0
 
 		self.song.add_visible_tracks_listener(self.on_tracks_added_or_deleted)
-		self.song.add_record_mode_listener(self.on_record_mode_changed)
-		self.song.add_is_playing_listener(self.on_is_playing_changed)
+		#self.song.add_is_playing_listener(self.on_is_playing_changed)
 		self.song.add_loop_listener(self.on_loop_changed)
 
 		self.reassign_strips()
@@ -76,8 +75,7 @@ class MixerController(RemoteSLComponent):
 		log("MixerController.disconnect() called.")
 		
 		self.song.remove_visible_tracks_listener(self.on_tracks_added_or_deleted)
-		self.song.remove_record_mode_listener(self.on_record_mode_changed)
-		self.song.remove_is_playing_listener(self.on_is_playing_changed)
+		#self.song.remove_is_playing_listener(self.on_is_playing_changed)
 		self.song.remove_loop_listener(self.on_loop_changed)
 		
 		for strip in self._strips:
@@ -486,39 +484,18 @@ class MixerController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def on_record_mode_changed(self):
+	# def on_is_playing_changed(self):
 		
-		if not self._transport_locked or self.support_mkII():
+	# 	if self._transport_locked or self.support_mkII():
 			
-			record_cc = Constants.Transport.RECORD
-
-			if self.support_mkII():
-				record_cc = 53
-
-			record_value = Constants.Hardware.BUTTON_PRESSED
-
-			if not self._parent.song.record_mode:
-				record_value = Constants.Hardware.BUTTON_RELEASED
-
-			# update the record button light.
-			self.send_midi((self.cc_status_byte(), record_cc, record_value))
-
-
-	################################################################################################################
-
-
-	def on_is_playing_changed(self):
-		
-		if self._transport_locked or self.support_mkII():
-			
-			if self._parent.song.is_playing:
+	# 		if self._parent.song.is_playing:
 				
-				self.send_midi((self.cc_status_byte(), 51, Constants.Hardware.BUTTON_PRESSED))
-				self.send_midi((self.cc_status_byte(), 50, Constants.Hardware.BUTTON_RELEASED))
+	# 			self.send_midi((self.cc_status_byte(), 51, Constants.Hardware.BUTTON_PRESSED))
+	# 			self.send_midi((self.cc_status_byte(), 50, Constants.Hardware.BUTTON_RELEASED))
 			
-			else:
-				self.send_midi((self.cc_status_byte(), 51, Constants.Hardware.BUTTON_RELEASED))
-				self.send_midi((self.cc_status_byte(), 50, Constants.Hardware.BUTTON_PRESSED))
+	# 		else:
+	# 			self.send_midi((self.cc_status_byte(), 51, Constants.Hardware.BUTTON_RELEASED))
+	# 			self.send_midi((self.cc_status_byte(), 50, Constants.Hardware.BUTTON_PRESSED))
 
 
 	################################################################################################################

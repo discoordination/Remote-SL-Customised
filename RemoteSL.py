@@ -465,10 +465,12 @@ class RemoteSL(ControlSurface):
 
 
 	def send_midi(self, midi_event_bytes : tuple[int, ...]):
-		"""Send MIDI bytes to the Live C instance when automap is not controlling them."""
+		"""Send MIDI bytes."""
+
+		log(f"RemoteSL.send_midi({' '.join(f'{h:02X}' for h in midi_event_bytes)}) called.")
 
 		found = False
-		for i,val in enumerate(midi_event_bytes):
+		for i, val in enumerate(midi_event_bytes):
 			if i != 0 and i != len(midi_event_bytes) - 1 and val > 0x7f:
 				found = True
 
