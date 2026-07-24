@@ -183,10 +183,10 @@ class Constants:
 	class MIDI:
 		"""MIDI status byte constants."""
 
-		NOTE_OFF: Final[int] = 128
-		NOTE_ON: Final[int] = 144
+		NOTE_OFF: Final[int] = 0x80
+		NOTE_ON: Final[int] = 0x90
 		STATUS: Final[int] = 0xB0
-		SYSEX: Final[int] = 240
+		SYSEX: Final[int] = 0xF0
 
 
 		class CMD:

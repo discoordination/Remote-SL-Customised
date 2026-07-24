@@ -30,8 +30,9 @@ if TYPE_CHECKING:
 from .DisplayComponent import DisplayComponent
 from ..myLogger import log
 
+
 ####################################################################################################################
-####################################################################################################################
+
 
 class MixerController(RemoteSLComponent):
 	"""Handle tracks, transport controls, and slider modes for the mixer section."""

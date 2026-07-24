@@ -59,7 +59,7 @@ class TransportComponent(Component):
 		self._create_buttons()
 		self._add_button_listeners()
 
-		log(f"<-----Returning from TransportController.__init__({name},{control_surface}).")
+		log(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
 
 
 	################################################################################################################

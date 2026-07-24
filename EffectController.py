@@ -376,8 +376,11 @@ class EffectController(RemoteSLComponent):
 		
 		log("EffectController.refresh_state() called.")
 		
-		self.__update_select_row_leds()
+		self.update_select_row_leds()
 		self.reassign_strips()
+
+		log("<-----Returning from EffectController.refresh_state() called.")
+
 
 
 	################################################################################################################
@@ -680,7 +683,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def __update_select_row_leds(self):
+	def update_select_row_leds(self):
 		
 		if self._assigned_device_is_locked:
 			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_TOP_BUTTON_ROW, Constants.Hardware.BUTTON_PRESSED))
@@ -698,7 +701,7 @@ class EffectController(RemoteSLComponent):
 			# --- FIX: ASSIGN THE LOCAL FLAG STATUS NATIVELY HERE ---
 			self._assigned_device_is_locked = True
 			# --------------------------------------------------------
-			self.__update_select_row_leds()
+			self.update_select_row_leds()
 
 
 	################################################################################################################
@@ -710,7 +713,7 @@ class EffectController(RemoteSLComponent):
 		if device and device == self._assigned_device:
 			
 			self._assigned_device_is_locked = False
-			self.__update_select_row_leds()
+			self.update_select_row_leds()
 			if self.song.appointed_device != self._assigned_device:
 				self.reassign_strips()
 

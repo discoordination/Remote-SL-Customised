@@ -267,9 +267,6 @@ class RemoteSL(ControlSurface):
 
 		self.send_midi(MIDI.ALL_LEDS_OFF)
 		self.send_midi(Constants.SysEx.GOODBYE) # After super so it's done after clear screen.
-		
-
-		
 
 
 	################################################################################################################
@@ -324,27 +321,6 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
-	# def map_transport_buttons(self):
-	# 	"""Maps the transport buttons the modern way."""
-		
-	# 	log("map_transport_buttons() called.")
-
-	# 	self._transport.layer = Layer(
-	# 		play_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.PLAY),
-	# 		stop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.STOP),
-	# 		record_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.RECORD),
-	# 		loop_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.LOOP),
-	# 		seek_backward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.REWIND),
-	# 		seek_forward_button=ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, Constants.Transport.FORWARD)
-	# 	)
-		
-
-	# 	self._components.append(self._transport)
-
-
-	################################################################################################################
-
-
 	def on_button_pressed_cb(self, value, sender: ButtonElement):
 		"""Callback to recieve button presses."""
 		
@@ -352,12 +328,10 @@ class RemoteSL(ControlSurface):
 
 		cc_or_note_no = sender.original_identifier()
 		midi_channel = sender.original_channel()
+
 		if midi_channel is None: return
 		
 		msg_type = sender.message_type() # Returns the type enum (MIDI_CC_TYPE or MIDI_NOTE_TYPE)
-
-		# log(f"Button Pressed. {midi_bytes} {value} {sender}")
-
 		status_byte = 0
 
 		if msg_type == MIDI_CC_TYPE:
@@ -372,33 +346,37 @@ class RemoteSL(ControlSurface):
 ################################################################################################################
 
 
-# This is now called by registered button listeners.
+	# This is now called by registered button listeners.
 	@override
 	def receive_midi(self, midi_bytes):
 		"""Route incoming MIDI messages to the effect or mixer controller."""
 
-		log(f"RemoteSL.receive_midi({str(midi_bytes)}) called.")
+		log(f"*->RemoteSL.receive_midi({str(midi_bytes)}) called.")
 
-		if not midi_bytes:
-			log("...returning none.")
+		if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
+			log("Error: ...receive_mid() blank midi message received.")
 			return None
 
-		status = midi_bytes[0] & 240
-		log(f"\t----->status={status}")
+		status = midi_bytes[0] & 0xf0
+		# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
 
+		log(f"\t----->status = {bin(status)}")
+
+		# if it's a midi note on or midi note off.
 		if status in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
 			
 			note = midi_bytes[1]
 			velocity = midi_bytes[2]
 			
 			if note in Constants.Effect.DRUM_PADS:
+				# send drum pad note to effect controller.
 				self._effect_controller.receive_midi_note(note, velocity)
 				return None
 			
 			log("unknown MIDI message %s" % str(midi_bytes))
 			return None
 
-
+		# if it's a midi status update.
 		if status == Constants.MIDI.STATUS:
 			
 			cc_no = midi_bytes[1]
@@ -422,26 +400,27 @@ class RemoteSL(ControlSurface):
 			return None
 
 
-		if status == 240:
+		# It's a sysex message.
+		if status == 0xf0:
 			
-			log("status == 240")
+			log(f"\t|----->Received a sysex message.")
 
-			if len(midi_bytes) == 13 or midi_bytes[1:4] == (0, 32, 41) or midi_bytes[8] == Constants.Hardware.ABLETON_PID or midi_bytes[10] == 1:
+			if (    len(midi_bytes) == 13 or 
+	   				midi_bytes[1:4] == (0, 32, 41) or
+					  midi_bytes[8] == Constants.Hardware.ABLETON_PID or 
+					 midi_bytes[10] == 1
+				):
 				
-				#self._automap_has_control = midi_bytes[11] == 0
-				#support_mkII = midi_bytes[6] * 100 + midi_bytes[7] >= 1800
-				
-				#if not self._automap_has_control:
+				log(f"\t|----->message: {midi_bytes} has passed the strange tests and is being processed.")
+
 				self.send_midi(MIDI.ALL_LEDS_OFF)
 				
 				for component in self._components:
-					
-					#component.set_support_mkII(support_mkII)
-					#if not self._automap_has_control:
 					component.refresh_state()
-				
 					self.request_rebuild_midi_map()
+
 				return None
+			
 
 		print("unknown MIDI message %s" % str(midi_bytes))
 		super(RemoteSL, self).receive_midi(midi_bytes)
@@ -641,7 +620,8 @@ class RemoteSL(ControlSurface):
 		for component in self._components:
 			#TODO: Review if refresh state is necessary or a good idea.	
 			if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
-				component.refresh_state()
+				pass
+				#component.refresh_state()
 
 		# If you were regularly to call this function then you would need to reset the timer here.
 		# Correction the update hardware timer is called in refresh_state() and is set to 5.

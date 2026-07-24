@@ -1,6 +1,6 @@
 ####################################################################################################################
 # Source Generated with Decompyle++
-# File: DisplayController.pyc (Python 3.11)
+# File: DisplayComponent.pyc (Python 3.11)
 ####################################################################################################################
 
 """Controller logic for the Remote SL display strips."""
@@ -27,6 +27,7 @@ from ..myLogger import log
 
 
 class DISPLAY(Enum):
+	"""ENUM for left and right display"""
 	LEFT = 0
 	RIGHT = 1
 
@@ -35,6 +36,7 @@ class DISPLAY(Enum):
 
 
 class ROW(IntEnum):
+	"""Enum for all the rows."""
 	TL = 0x01
 	TR = 0x02
 	BL = 0x03
@@ -69,7 +71,7 @@ class DisplayComponent(Component):
 		# looks like an unknown object and 4 lines
 		self._last_send_row_id_messages = [None, [], [], [], []] # <-- Refreshed in refresh_state...
 
-		self.refresh_state()
+		#self.refresh_state()
 
 		log(f"<-----Returning from DisplayComponent.__init__({control_surface},{name})")
 
@@ -79,6 +81,7 @@ class DisplayComponent(Component):
 
 	@property
 	def control_surface(self):
+		"""The control surface parent object."""
 		return self._control_surface
 
 
@@ -86,7 +89,8 @@ class DisplayComponent(Component):
 
 
 	def clear_display_row(self, row: ROW):
-		
+		"""Clear a row."""
+
 		if (row == ROW.TL):
 			self.control_surface.send_midi(SYX.CLEAR_ROW_TL)
 		elif (row == ROW.TR):
@@ -101,6 +105,7 @@ class DisplayComponent(Component):
 		
 
 	def clear_display(self, display: DISPLAY):
+		"""Clear the one whole display."""
 		
 		if(display == DISPLAY.LEFT):
 			self.control_surface.send_midi(SYX.CLEAR_LEFT_DISPLAY)
@@ -112,7 +117,7 @@ class DisplayComponent(Component):
 	
 
 	def clear_displays(self):
-		"""Send the sysex command that clears the left and right displays."""
+		"""Send the sysex command that clears both the left and right displays."""
 
 		self.control_surface.send_midi(SYX.CLEAR_BOTH_DISPLAYS)
 
@@ -143,11 +148,13 @@ class DisplayComponent(Component):
 
 		display_string = display_string.strip()
 
+		# Special rules for something ending with dB then it takes away the dB.
 		if (
 			len(display_string) > Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP - 1
 			and display_string.endswith("dB")
 			and "." in display_string
 		):
+			log(f"dB stripped from {display_string}")
 			display_string = display_string[:-2]
 
 		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
@@ -161,9 +168,10 @@ class DisplayComponent(Component):
 	def refresh_state(self):
 		"""Reset the cached display state for the rows."""
 
-		log("DisplayController.refresh_state() called.")
+		log("DisplayComponent.refresh_state() called.")
 		self._last_send_row_id_messages = [None, [], [], [], []] # <------ Resets this object.
-		log("<-----Returning from DisplayController.refresh_state().")
+		log("<-----Returning from DisplayComponent.refresh_state().")
+
 
 	################################################################################################################
 
