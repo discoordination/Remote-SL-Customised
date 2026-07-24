@@ -469,13 +469,19 @@ class RemoteSL(ControlSurface):
 
 		log(f"RemoteSL.send_midi({' '.join(f'{h:02X}' for h in midi_event_bytes)}) called.")
 
-		found = False
+		# check for bad midi bytes.
+		bad = False
+		
 		for i, val in enumerate(midi_event_bytes):
 			if i != 0 and i != len(midi_event_bytes) - 1 and val > 0x7f:
-				found = True
+				bad = True
 
-		if found:
-			log(f"Error bad MIDI message sent: {midi_event_bytes}")
+		if midi_event_bytes[0] in (M.CC, M.NOTE_ON, M.NOTE_OFF):
+			if len(midi_event_bytes) > 3:
+				bad = True
+
+		if bad:
+			log(f"Error: bad MIDI message sent: {midi_event_bytes}")
 		
 		self._send_midi(midi_event_bytes)
 
