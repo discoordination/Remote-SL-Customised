@@ -179,29 +179,27 @@ class DisplayComponent(Component):
 	def send_display_string(self, message, row_id, offset=0):
 		"""Send a formatted display string to the hardware."""
 
-		final_message = " " * offset + message
+		final_message = " " * offset + message # add the offset to the string.
 
+		# Fill to the end of the display line.
 		if len(final_message) < Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
 			fill_up =Constants.Hardware. NUM_CHARS_PER_DISPLAY_LINE - len(final_message)
 			final_message = final_message + " " * fill_up
-		
+
+		# Or cut to length.
 		elif len(final_message) >= Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
 			final_message = final_message[0:Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE]
 
-		final_offset = 0
-
-		sysex_header = (240, 0, 32, 41, 3, 3, 18, 0, Constants.Hardware.ABLETON_PID, 0, 2, 1)
-		sysex_pos = (final_offset, row_id)
-		sysex_text_command = (4,)
+		sysex_pos = (0, row_id) # col: 0, row: row_id
 		sysex_text = tuple(as_ascii(final_message))
-		sysex_close_up = (247,)
 
-		full_sysex = sysex_header + sysex_pos + sysex_text_command + sysex_text + sysex_close_up
+		full_syx_msg = SYX.BEG_SYX + SYX.CMD.LCD_TEXT + SYX.SUB_CMD.TXT.CURS_ADDR + (sysex_pos) + SYX.SUB_CMD.TXT.TEXT_STRING + sysex_text + SYX.END_MSG
 
-		if self._last_send_row_id_messages[row_id] != full_sysex:
-			self._last_send_row_id_messages[row_id] = full_sysex
-			log("\t|----->Sending display string.")
-			self.control_surface.send_midi(full_sysex)
+		if self._last_send_row_id_messages[row_id] != full_syx_msg:
+
+			log(f"\t|----->Str to display: {' '.join(f'{x:02X}' for x in full_syx_msg)}")
+			self._last_send_row_id_messages[row_id] = full_syx_msg
+			self.control_surface.send_midi(full_syx_msg)
 
 
 	################################################################################################################
