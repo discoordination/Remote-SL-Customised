@@ -9,9 +9,11 @@ from ableton.v2.control_surface import Component
 from ableton.v3.base import as_ascii
 
 from enum import Enum, IntEnum
+from typing import Sequence
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
+
 if sys.version_info >= (3, 12):
 	from typing import override
 else:
@@ -69,7 +71,8 @@ class DisplayComponent(Component):
 		self._message_popup_ticks = 0 	# How long to display a popup message for? 
 
 		# looks like an unknown object and 4 lines
-		self._last_send_row_id_messages = [None, [], [], [], []] # <-- Refreshed in refresh_state...
+		self._displayed_rows_cache = [None, [], [], [], []] # <-- Refreshed in refresh_state...
+															#   None here is to line up with row ids
 
 		#self.refresh_state()
 
@@ -139,7 +142,7 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def generate_strip_string(self, display_string):
+	def generate_strip_string(self, display_string: str):
 		"""Create a padded display string for a single strip."""
 
 		# Blank returns all spaces basically.
@@ -169,14 +172,14 @@ class DisplayComponent(Component):
 		"""Reset the cached display state for the rows."""
 
 		log("DisplayComponent.refresh_state() called.")
-		self._last_send_row_id_messages = [None, [], [], [], []] # <------ Resets this object.
+		self._displayed_rows_cache = [None, [], [], [], []] # <------ Resets this object.
 		log("<-----Returning from DisplayComponent.refresh_state().")
 
 
 	################################################################################################################
 
 
-	def send_display_string(self, message, row_id, offset=0):
+	def _send_display_string(self, message: str, row: ROW, offset:int = 0):
 		"""Send a formatted display string to the hardware."""
 
 		final_message = " " * offset + message # add the offset to the string.
@@ -190,35 +193,31 @@ class DisplayComponent(Component):
 		elif len(final_message) >= Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE:
 			final_message = final_message[0:Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE]
 
-		sysex_pos = (0, row_id) # col: 0, row: row_id
+		sysex_pos = (0, row) # col: 0, row: row_id
 		sysex_text = tuple(as_ascii(final_message))
 
 		full_syx_msg = SYX.BEG_SYX + SYX.CMD.LCD_TEXT + SYX.SUB_CMD.TXT.CURS_ADDR + (sysex_pos) + SYX.SUB_CMD.TXT.TEXT_STRING + sysex_text + SYX.END_MSG
 
-		if self._last_send_row_id_messages[row_id] != full_syx_msg:
+		if self._displayed_rows_cache[row] != full_syx_msg:
 
 			log(f"\t|----->Str to display: {' '.join(f'{x:02X}' for x in full_syx_msg)}")
-			self._last_send_row_id_messages[row_id] = full_syx_msg
+			self._displayed_rows_cache[row] = full_syx_msg
 			self.control_surface.send_midi(full_syx_msg)
 
 
 	################################################################################################################
 
 
-	def setup_left_display(self, names, parameters):
+	def setup_left_display(self, names: list[str], parameters: Sequence[float | None]):
 		"""Store the names and parameter labels shown on the left display."""
 
-		# log(f"--- DISPLAY CONTROLLER INCOMING ---")
-		# log(f"PARAM_NAMES VAL: {str(names)} (Length: {len(names)})")
-		# log(f"PARAMETERS VAL: {str(parameters)} (Length: {len(parameters)})")
-		# ------------------------------------------------------------------------
 		self.left_strip_names = names
 		self.left_strip_parameters = parameters
 
 
 	################################################################################################################
 
-	def setup_right_display(self, names, parameters):
+	def setup_right_display(self, names: list[str], parameters: list[str]):
 		"""Store the names and parameter labels shown on the right display."""
 
 		self.right_strip_names = names
@@ -235,19 +234,33 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def show_timed_message(self, message_text, duration_seconds=2.0):
+	def show_timed_message(self, message_text: str, duration_seconds: float = 3.0, centred:bool = False, *rows: ROW):
 		"""Public endpoint to cleanly show a fluid, full-row message on a strict hardware hold timer."""
 
 		log(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
 		
 		# Convert seconds to clock frames (update_display runs roughly 5 times a second)
-		# 2.0 seconds * 5 = 10 ticks
 		self._message_popup_ticks = int(duration_seconds * 5)
+
+		if not rows:
+			rows = (ROW.TL,)
 		
-		# Directly broadcast your raw text string across Row 1 (Top Line Left)
-		self.send_display_string(message_text, row_id=1, offset=0)
-		# Completely wipe Row 3 (Bottom Line Left) so parameter values don't bleed into it
-		self.send_display_string("", row_id=3, offset=0)
+		if not centred:
+			self.write_full_row_string(message_text, *rows)
+		else:
+			self.write_full_row_string_centred(message_text, *rows)
+
+		# Convoluted way to clear other row of display used for message if it's not also used for the message.
+		for row in ROW:
+			if row not in rows:
+				if row == ROW.TL and ROW.BL not in rows:
+					self.clear_display_row(ROW.BL)
+				elif row == ROW.TR and ROW.BR not in rows:
+					self.clear_display_row(ROW.BR)
+				elif row == ROW.BL and ROW.TL not in rows:
+					self.clear_display_row(ROW.TL)
+				elif row == ROW.BR and ROW.TR not in rows:
+					self.clear_display_row(ROW.TR)
 
 
 	################################################################################################################
@@ -260,7 +273,8 @@ class DisplayComponent(Component):
 		super().update()
 
 		# --- THE CENTRAL NOTIFICATION TIMER GATE ---
- 
+		# This deals with displaying a timed message to the screen.
+
 		# -1 is off... 0 is end of timer.
 		if (self._message_popup_ticks > -1):
 			self._message_popup_ticks -= 1
@@ -275,7 +289,7 @@ class DisplayComponent(Component):
 						
 			# not sure what we are doing here....
 			for row_key in (1, 2, 3, 4):
-				self._last_send_row_id_messages[row_key] = ""
+				self._displayed_rows_cache[row_key] = ""
 					
 		elif self._message_popup_ticks > 0:
 			# Keep the screen completely frozen during the active countdown hold
@@ -284,10 +298,14 @@ class DisplayComponent(Component):
 		# --------------------------------------------
 
 		# rows are top_left, top_right, bottom_left, bottom_right
-		for row_id in (1, 2, 3, 4):
+		for row in ROW:
+
 			message_string = ""
-			if row_id in (1, 2):
-				if row_id == 1:
+
+			if row in (ROW.TL, ROW.TR):
+
+				# Get the names for either left display or right display.
+				if row == ROW.TL:
 					strip_names = self.left_strip_names
 				else:
 					strip_names = self.right_strip_names
@@ -296,31 +314,40 @@ class DisplayComponent(Component):
 				# If we receive exactly 1 long fluid text string instead of 8 column blocks
 				if len(strip_names) == 1:
 					message_string = strip_names[0]
-					self.send_display_string(message_string, row_id, offset=0)
+					self.write_full_row_string(message_string, row)
 					continue
 				# ------------------------------------------------
 					
-				if len(strip_names) == Constants.Hardware.NUM_CONTROLS_PER_ROW:
-					for name in strip_names:
-						message_string += self.generate_strip_string(name)
-				else:
-					log("Error: What am i seeing here????")
-					message_string = self.generate_strip_string("") * Constants.Hardware.NUM_CONTROLS_PER_ROW
-				self.send_display_string(message_string, row_id, offset=0)
+				#if len(strip_names) == Constants.Hardware.NUM_CONTROLS_PER_ROW:
+				for name in strip_names:
+					message_string += self.generate_strip_string(name)
+				#else:
+				#	log(f"Error: {__name__}.{__class__}.update() length of strip_names is wrong.")
+				#	raise Exception(f"Error: {__name__}.{__class__}.update() length of strip_names is wrong.")
+				#	message_string = self.generate_strip_string("") * Constants.Hardware.NUM_CONTROLS_PER_ROW # just blanks.
+
+				self.write_full_row_string(message_string, row)
 				continue
 
-			if row_id == 3:
-				parameters = self.left_strip_parameters
-			else:
-				parameters = self.right_strip_parameters
+			if row in (ROW.BL, ROW.BR):
 
-			for parameter in parameters:
-				if parameter:
-					message_string += self.generate_strip_string(str(parameter))
+				# Get the parameters for either left or right.
+				if row == ROW.BL:
+					parameters = self.left_strip_parameters
 				else:
-					message_string += self.generate_strip_string("")
+					parameters = self.right_strip_parameters
 
-			self.send_display_string(message_string, row_id, offset=0)
+				# Look for whole strings.
+				if len(parameters) == 1:
+					message_string = parameters[0]
+					self.write_full_row_string(str(message_string) if message_string else "", row)
+					continue
+
+				# Generate the strip strings.
+				for parameter in parameters:
+					message_string += self.generate_strip_string(str(parameter) if parameter else "")
+
+				self.write_full_row_string(message_string, row)
 
 
 	################################################################################################################
@@ -329,14 +356,15 @@ class DisplayComponent(Component):
 	def write_full_row_string(self, text: str, *rows: ROW):
 		"""Public endpoint to print a continuous, perfectly spaced phrase across a full row."""
 
-		log(f"DisplayComponent.write_full_row_string({text}, {rows}) called.")
+		#log(f"DisplayComponent.write_full_row_string(\"{text}\", {rows if rows else ""}) called.")
+		# Called on every cycle.
 
-		if rows.count == 0:
+		if not rows:
 			rows = (ROW.TL,)
 
 		# Safely pass the text string down to the internal private Sysex compiler
 		for row in rows:
-			self.send_display_string(text, row.value, offset=0)
+			self._send_display_string(text, row, offset=0)
 
 
 	################################################################################################################
@@ -344,7 +372,8 @@ class DisplayComponent(Component):
 
 	def write_full_row_string_centred(self, text: str, *rows: ROW):
 
-		log(f"DisplayComponent.write_full_row_string_centred({text}, {rows}) called.")
+		#log(f"DisplayComponent.write_full_row_string_centred(\"{text}\", {rows if rows else ""}) called.")
+		# Called on every cycle.
 
 		if rows.count == 0:
 			rows = (ROW.TL,)
