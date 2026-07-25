@@ -188,6 +188,9 @@ class Constants:
 		STATUS: Final[int] = 0xB0
 		CC: Final[int] = 0xB0
 		SYSEX: Final[int] = 0xF0
+		CHANNEL: Final[int] = 0
+
+		START_BYTE: Final[int] = STATUS + CHANNEL
 
 		class CMD:
 

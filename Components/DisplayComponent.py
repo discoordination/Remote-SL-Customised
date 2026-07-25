@@ -154,12 +154,13 @@ class DisplayComponent(Component):
 		display_string = display_string.strip()
 
 		# Special rules for something ending with dB then it takes away the dB.
+		# TODO: Would be better maybe to limit to 2decimal places.
 		if (
 			len(display_string) > Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP - 1
 			and display_string.endswith("dB")
 			and "." in display_string
 		):
-			log(f"dB stripped from {display_string}")
+			#log(f"dB stripped from {display_string}")
 			display_string = display_string[:-2]
 
 		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
@@ -255,14 +256,14 @@ class DisplayComponent(Component):
 		# Convoluted way to clear other row of display used for message if it's not also used for the message.
 		for row in ROW:
 			if row not in rows:
-				if row == ROW.TL and ROW.BL not in rows:
-					self.clear_display_row(ROW.BL)
-				elif row == ROW.TR and ROW.BR not in rows:
-					self.clear_display_row(ROW.BR)
-				elif row == ROW.BL and ROW.TL not in rows:
+				if row == ROW.TL and ROW.BL in rows:
 					self.clear_display_row(ROW.TL)
-				elif row == ROW.BR and ROW.TR not in rows:
+				elif row == ROW.TR and ROW.BR in rows:
 					self.clear_display_row(ROW.TR)
+				elif row == ROW.BL and ROW.TL in rows:
+					self.clear_display_row(ROW.BL)
+				elif row == ROW.BR and ROW.TR in rows:
+					self.clear_display_row(ROW.BR)
 
 
 	################################################################################################################

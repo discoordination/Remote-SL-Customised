@@ -51,7 +51,7 @@ class TransportComponent(Component):
 
 		self._play_button: 		ButtonElement
 		self._stop_button: 		ButtonElement
-		self._record_button: 	ButtonElement 
+		self._record_button: 	ButtonElement
 		self._loop_button: 		ButtonElement
 		self._rewind_button: 	ButtonElement 
 		self._fforward_button: 	ButtonElement
@@ -70,6 +70,15 @@ class TransportComponent(Component):
 	def control_surface(self):
 		return self._control_surface
 
+
+	@property
+	@override
+	def song(self) -> Song:
+		result = super().song
+		assert result is not None
+		return result
+
+	
 	# def on_enabled(self):
 		
 	# 	log("TransportComponent.on_enabled() called.")
@@ -84,12 +93,6 @@ class TransportComponent(Component):
 	# 	log("TransportComponent.on_disabled() called.")
 	# 	# Called when component is disabled – clean up
 	# 	# e.g., turn off any LEDs
-	@property
-	@override
-	def song(self) -> Song:
-		result = super().song
-		assert result is not None
-		return result
 		
 
 	################################################################################################################

@@ -6,18 +6,14 @@
 """Main Remote SL controller script for Ableton Live."""
 import Live
 
-
-#import MidiRemoteScript <-- Unnecessary unused.
 from _Generic.util import DeviceAppointer
 
-
 from ableton.v2.control_surface import ControlSurface, Component, Layer, Skin, MIDI_CC_TYPE, MIDI_NOTE_TYPE
-# from ableton.v2.control_surface.components import TransportComponent
-#from _Framework.TransportComponent import TransportComponent
 from ableton.v2.control_surface.elements import ButtonElement, EncoderElement
 
+#from ableton.v2.base.task import wait, sequence, run
+
 import sys
-import time
 
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
@@ -31,11 +27,9 @@ from .consts import Constants, MIDI
 from .Components.TransportComponent import TransportComponent
 from .Components.DisplayComponent import DisplayComponent
 from .EffectController import EffectController
-from .Components.MixerComponent import MixerController
+from .Components.MixerComponent import MixerComponent
 
 from .myLogger import *
-
-
 
 
 ####################################################################################################################
@@ -52,11 +46,9 @@ class RemoteSL(ControlSurface):
 		"""Initialise the Remote SL controller and its child components."""
 
 		log("RemoteSL.__init__() called.")
-		#self._device_initialized = False
 
 		super(RemoteSL, self).__init__(c_instance)
 
-		#self._c_instance = c_instance
 		self._handle = c_instance.handle() # <--- Remove when fully upgraded
 
 		with self.component_guard():
@@ -65,22 +57,16 @@ class RemoteSL(ControlSurface):
 
 			# At some point we should mebbe split _components from controllers????
 			# TODO: self._components should be removed once all controllers are components. 
-			self._components : list[Component | EffectController | MixerController] = []
+			self._components : list[Component | EffectController] = []
 		
-
 			log("\t|----->Setting up free buttons...")
 
 			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Effect.NAVIGATION + Constants.Effect.SELECT_BUTTONS + Constants.Effect.UPPER_BUTTONS]
 
-			# self._ts_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Transport.ALL]
-
-			self._mx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Mixer.NAVIGATION+ Constants.Mixer.SELECT_BUTTONS + Constants.Mixer.BUTTONS_TOP_ROW + Constants.Mixer.BUTTONS_BOTTOM_ROW]
-
 			log("\t|----->Done setting up free buttons.")
 
-
 			log("\t|----->Adding listeners...")
-			for button in list(self._fx_buttons + self._mx_buttons):
+			for button in list(self._fx_buttons):# + self._mx_buttons):
 				button.add_value_listener(self.on_button_pressed_cb, identify_sender=True)
 			log("\t|----->Done adding listeners.")
 
@@ -91,7 +77,7 @@ class RemoteSL(ControlSurface):
 			self._effect_controller = EffectController(self)
 
 			log("\t|----->Building MixerController...")
-			self._mixer_controller = MixerController(self)
+			self._mixer_controller = MixerComponent(self)
 
 			log("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
@@ -101,9 +87,9 @@ class RemoteSL(ControlSurface):
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
+			self.song.add_tempo_listener(self._tempo_changed)
 		
 			self._components.append(self._effect_controller)
-			self._components.append(self._mixer_controller)
 		
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
@@ -138,11 +124,13 @@ class RemoteSL(ControlSurface):
 		log("<-----Returning from RemoteSL.__init__().")
 
 
+	def _tempo_changed(self):
+		log(f"RemoteSL._tempo_changed() called. New tempo: {self.song.tempo}bpm.")
 
 	################################################################################################################
 
 
-	# definitely no an override.
+	# definitely not an override.
 	def get_application(self):
 		"""Expose the Live application object."""
 		
@@ -150,7 +138,6 @@ class RemoteSL(ControlSurface):
 
 
 	################################################################################################################
- 
  
 
 	@override
@@ -191,6 +178,8 @@ class RemoteSL(ControlSurface):
 
 	def clean_track_switch_hook(self):
 		"""	# --- CHANNELS MONITOR: INSTANT BLANK TRACK SCREEN WIPER ---"""
+
+		log(f"RemoteSL.clean_track_switch_hook_called() called.")
 
 		# --- THE ABSOLUTE LOGIC GATE ---
 		# Check if our effect controller exists and if a lock is currently active
@@ -260,7 +249,7 @@ class RemoteSL(ControlSurface):
 
 		self._device_appointer.disconnect()
 
-		for button in list(self._fx_buttons + self._mx_buttons): # + self._ts_buttons
+		for button in list(self._fx_buttons): # + self._mx_buttons): # + self._ts_buttons
 			button.remove_value_listener(self.on_button_pressed_cb)
 
 		super(RemoteSL, self).disconnect()
@@ -417,7 +406,8 @@ class RemoteSL(ControlSurface):
 				
 				for component in self._components:
 					component.refresh_state()
-					self.request_rebuild_midi_map()
+
+				self.request_rebuild_midi_map()
 
 				return None
 			
@@ -471,7 +461,7 @@ class RemoteSL(ControlSurface):
 
 		# check for bad midi bytes.
 		bad = False
-		
+
 		for i, val in enumerate(midi_event_bytes):
 			if i != 0 and i != len(midi_event_bytes) - 1 and val > 0x7f:
 				bad = True
