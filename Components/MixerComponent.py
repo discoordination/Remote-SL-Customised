@@ -20,6 +20,7 @@ from Live.Track import Track
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
 from ableton.v2.control_surface.elements import ButtonElement, SliderElement
 
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import sys
@@ -42,6 +43,16 @@ from ..myLogger import log
 
 
 ####################################################################################################################
+
+
+class LayoutMode(Enum):
+	STANDARD = (0, "All")
+	TRACKS = (1, "Tracks & Main")
+	RETURNS = (2, "Returns & Main")
+
+
+####################################################################################################################
+
 
 
 class MixerComponent(Component):
@@ -75,12 +86,13 @@ class MixerComponent(Component):
 		
 		self._strips = [MixerChannelStrip(self, index) for index in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
 		self._assigned_tracks: list[Track] = []
+		self._layout_mode: LayoutMode = LayoutMode.STANDARD
 
 		self._create_buttons()
 		self._add_button_listeners()
 
 		self.song.add_visible_tracks_listener(self.on_tracks_added_or_deleted)
-		self.song.add_loop_listener(self._on_loop_changed)
+		#self.song.add_loop_listener(self._on_loop_changed)
 
 		self.update_selected_row_leds() # For light at start.
 		self.reassign_strips()
@@ -124,6 +136,17 @@ class MixerComponent(Component):
 	@property
 	def send_midi(self):
 		return self._control_surface.send_midi
+
+
+	################################################################################################################
+	
+	
+	@property
+	def bank_size(self) -> int:
+		if self._layout_mode == LayoutMode.STANDARD:  # All Tracks
+			return Constants.Hardware.NUM_CONTROLS_PER_ROW  # 8
+		else:  # Tracks Only or Returns Only
+			return Constants.Hardware.NUM_CONTROLS_PER_ROW - 1  # 7
 
 
 	################################################################################################################
@@ -194,7 +217,7 @@ class MixerComponent(Component):
 		
 		self.song.remove_visible_tracks_listener(self.on_tracks_added_or_deleted)
 		#self.song.remove_is_playing_listener(self.on_is_playing_changed)
-		self.song.remove_loop_listener(self._on_loop_changed)
+		#self.song.remove_loop_listener(self._on_loop_changed)
 		
 		for strip in self._strips:
 			strip.set_assigned_track(None)
@@ -203,6 +226,19 @@ class MixerComponent(Component):
 			if track and track.name_has_listener(self.on_track_name_changed):
 				track.remove_name_listener(self.on_track_name_changed)
 
+
+	################################################################################################################
+
+
+	def _get_filtered_tracks(self) -> tuple[Live.Track.Track, ...]:
+		
+		if self._layout_mode == LayoutMode.STANDARD: # All Tracks (standard) 
+			return tuple(self.song.visible_tracks) + tuple(self.song.return_tracks) + (self.song.master_track,)
+		elif self._layout_mode == LayoutMode.RETURNS:  # Returns Only
+			return tuple(self.song.return_tracks)
+		else:  # Tracks Only
+			return tuple(self.song.visible_tracks)
+		
 
 	################################################################################################################
 
@@ -254,9 +290,9 @@ class MixerComponent(Component):
 		
 		all_tracks = tuple(self.control_surface.song.visible_tracks) + tuple(self.control_surface.song.return_tracks) + (self.control_surface.song.master_track,)
 
-		if value and len(all_tracks) > Constants.Hardware.NUM_CONTROLS_PER_ROW:
-			self._strip_offset += H.NUM_CONTROLS_PER_ROW
-			self.validate_strip_offset()
+		if value and len(all_tracks) > self.bank_size:
+			self._strip_offset += self.bank_size
+			#self._validate_strip_offset()
 			self.reassign_strips()
 			self.control_surface.request_rebuild_midi_map()
 
@@ -271,8 +307,8 @@ class MixerComponent(Component):
 		all_tracks = tuple(self.control_surface.song.visible_tracks) + tuple(self.control_surface.song.return_tracks) + (self.control_surface.song.master_track,)
 
 		if value and self._strip_offset > 0:
-			self._strip_offset -= H.NUM_CONTROLS_PER_ROW
-			self.validate_strip_offset()
+			self._strip_offset -= self.bank_size
+			#self._validate_strip_offset()
 			self.reassign_strips()
 			self.control_surface.request_rebuild_midi_map()
 
@@ -295,7 +331,6 @@ class MixerComponent(Component):
 				self.set_slider_mode(SLM.SEND + self._last_send_index)
 				
 
-
 	################################################################################################################
 
 	
@@ -303,7 +338,16 @@ class MixerComponent(Component):
 		log(f"MixerComponent._on_btn_sel_faders_pressed({value}) called.")
 
 		if value:
-			self.set_slider_mode(SLM.VOLUME)
+			if self._slider_mode != SLM.VOLUME:
+
+				self.set_slider_mode(SLM.VOLUME)
+
+			else:
+				self._layout_mode = list(LayoutMode)[((self._layout_mode.value[0] + 1) % len(LayoutMode))]
+				self._display_component.show_timed_message(f"{self._layout_mode.value[1]}", 2.0, True, ROW.TR)
+				self._strip_offset = 0 # Reset the offset.
+				self.reassign_strips()
+				self.control_surface.request_rebuild_midi_map()
 
 
 	################################################################################################################
@@ -320,23 +364,11 @@ class MixerComponent(Component):
 	################################################################################################################
 
 
-	def _on_loop_changed(self, value) -> None:
-		pass
-		# if self._transport_locked or self.support_mkII():
-		# 	if self.song.loop:
-		# 		self.send_midi((self.M.START_BYTE, 52, Constants.Hardware.BUTTON_PRESSED))
-		# 	else:
-		# 		self.send_midi((self.M.START_BYTE, 52, Constants.Hardware.BUTTON_RELEASED))
-
-
-	################################################################################################################
-
-
 	def on_tracks_added_or_deleted(self) -> None:
 		
 		log("MixerController.on_tracks_added_or_deleted called().")
 		
-		self.validate_strip_offset()
+		#self._validate_strip_offset()
 		self.reassign_strips()
 		self.control_surface.request_rebuild_midi_map()
 
@@ -355,22 +387,39 @@ class MixerComponent(Component):
 		
 		log("MixerController.reassign_strips() called.")
 
-		track_index = self._strip_offset
-		track_names = []
-		parameters = []
-
+		# Remove existing listeners.
 		for track in self._assigned_tracks:
 			if track and track.name_has_listener(self.on_track_name_changed):
 				track.remove_name_listener(self.on_track_name_changed)
 
+		# Reset assigned tracks list.
 		self._assigned_tracks = []
-		all_tracks = tuple(self.song.visible_tracks) + tuple(self.song.return_tracks) + (self.song.master_track,)
+		# Get tracks based on display mode
+		tracks = self._get_filtered_tracks()
 
-		for strip in self._strips:
-			
-			if track_index < len(all_tracks):
-				
-				track = all_tracks[track_index]
+		# tracks_str = ''.join('\t\t\t' + str(track) + '\n' for track in tracks)
+		# log(f"\t----->DisplayMode: {self._layout_mode.value[1]}  Tracks:\n{tracks_str}")
+
+		track_names = []
+		parameters = []
+		self._validate_strip_offset()
+		track_index = self._strip_offset
+
+		for strip_index, strip in enumerate(self._strips):
+
+			if self._layout_mode != LayoutMode.STANDARD and strip_index == len(self._strips) - 1:
+				track = self.song.master_track
+
+			else:
+				# We haven't run out of tracks
+				if track_index < len(tracks):
+
+					track = tracks[track_index]
+					track_index += 1
+				else:
+					track = None
+
+			if track:
 				strip.set_assigned_track(track)
 				track_names.append(track.name)
 				parameters.append(strip.slider_parameter())
@@ -378,15 +427,14 @@ class MixerComponent(Component):
 				self._assigned_tracks.append(track)
 			
 			else:
-				
 				strip.set_assigned_track(None)
 				track_names.append("")
 				parameters.append(None)
 			
-			track_index += 1
-
+	
 		self._display_component.setup_right_display(track_names, parameters)
-		#self.control_surface.request_rebuild_midi_map() # Should be done here if you are changing something.
+		#self.control_surface.request_rebuild_midi_map() # We don't do it here if something has changed then it needs
+		# to be done
 		
 		log("<-----Returning from MixerController.reassign_strips()")
 		
@@ -538,11 +586,25 @@ class MixerComponent(Component):
 	################################################################################################################
 
 
-	def validate_strip_offset(self) -> None:
+	def _validate_strip_offset(self) -> None:
+
+		# Get filtered tracks (same as reassign_strips)
+		tracks = self._get_filtered_tracks()
+
+		# if not tracks:
+		# 	self._strip_offset = 0
+		# 	return
+
+		# Calculate the largest multiple of bank_size that is <= len(tracks) - 1
+		# This gives us: 0, bank_size, 2*bank_size, ... up to the last full/partial bank
+		max_offset = max(0, ((len(tracks) - 1) // self.bank_size) * self.bank_size)
 		
-		all_tracks = tuple(self.song.visible_tracks) + tuple(self.song.return_tracks) + (self.control_surface.song.master_track,)
-		self._strip_offset = min(self._strip_offset, len(all_tracks) - 1)
+		# Clamp to valid range
+		self._strip_offset = min(self._strip_offset, max_offset)
 		self._strip_offset = max(0, self._strip_offset)
+		
+		# Align to bank_size (ensures offset is always 0, bank_size, 2*bank_size, ...)
+		self._strip_offset = (self._strip_offset // self.bank_size) * self.bank_size
 
 
 	################################################################################################################
