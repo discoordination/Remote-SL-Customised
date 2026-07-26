@@ -23,6 +23,11 @@ else:
 	def override(func):
 		return func
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from ..RemoteSL import RemoteSL
+
 
 ####################################################################################################################
 
@@ -58,7 +63,7 @@ class TransportComponent(Component):
 
 		self._create_buttons()
 		self._add_button_listeners()
-		self.song.add_record_mode_listener(self.on_record_mode_changed)
+		self.song.add_record_mode_listener(self._on_record_mode_changed)
 
 
 		log(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
@@ -104,7 +109,7 @@ class TransportComponent(Component):
 		log("TransportComponent.disconnect() called.")
 
 		self._remove_button_listeners()
-		self.song.remove_record_mode_listener(self.on_record_mode_changed)
+		self.song.remove_record_mode_listener(self._on_record_mode_changed)
 
 		super().disconnect()
 
@@ -210,7 +215,7 @@ class TransportComponent(Component):
 	################################################################################################################
 
 
-	def on_record_mode_changed(self):
+	def _on_record_mode_changed(self):
 		
 		# update the record button light. T.RECORD is the same for the button in one way and the light in the other.
 		self.control_surface.send_midi((M.STATUS + H.MIDI_CHANNEL, T.RECORD, self.song.record_mode))
