@@ -5,11 +5,14 @@
 
 """Controller logic for the Remote SL display strips."""
 
+from Live.DeviceParameter import DeviceParameter
+
 from ableton.v2.control_surface import Component
 from ableton.v3.base import as_ascii
 
 from enum import Enum, IntEnum
-from typing import Sequence
+from typing import Optional, Sequence
+
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
@@ -48,6 +51,34 @@ class ROW(IntEnum):
 ####################################################################################################################
 
 
+def format_param(param, decimals=2) -> str:
+    if param is None:
+        return ""
+    
+    full = str(param)  # e.g., "-3.2 dB"
+    
+    # Split into number and unit
+    parts = full.rsplit(' ', 1)
+    if len(parts) == 2:
+        value_str, unit = parts
+        # Parse the numeric part, format it, then reattach the unit
+        try:
+            value = float(value_str)
+            return f"{value:.{decimals}f} {unit}"
+        except ValueError:
+            return full
+    else:
+        # No unit – just format the value
+        try:
+            value = float(full)
+            return f"{value:.{decimals}f}"
+        except ValueError:
+            return full
+
+
+####################################################################################################################
+
+
 class DisplayComponent(Component):
 	"""Handle the two display strips and their associated text updates."""
 
@@ -64,9 +95,9 @@ class DisplayComponent(Component):
 		self._control_surface = control_surface
 
 		self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
-		self.left_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+		self.left_strip_parameters:  Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 		self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
-		self.right_strip_parameters = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+		self.right_strip_parameters: Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 
 		self._message_popup_ticks = 0 	# How long to display a popup message for? 
 
@@ -211,7 +242,7 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def setup_left_display(self, names: list[str], parameters: Sequence[float | None]):
+	def setup_left_display(self, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
 		"""Store the names and parameter labels shown on the left display."""
 
 		self.left_strip_names = names
@@ -220,7 +251,7 @@ class DisplayComponent(Component):
 
 	################################################################################################################
 
-	def setup_right_display(self, names: list[str], parameters: list[str]):
+	def setup_right_display(self, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
 		"""Store the names and parameter labels shown on the right display."""
 
 		self.right_strip_names = names
@@ -348,7 +379,8 @@ class DisplayComponent(Component):
 
 				# Generate the strip strings.
 				for parameter in parameters:
-					message_string += self.generate_strip_string(str(parameter) if parameter else "")
+
+					message_string += self.generate_strip_string(format_param(parameter))
 
 				self.write_full_row_string(message_string, row)
 
@@ -378,7 +410,7 @@ class DisplayComponent(Component):
 		#log(f"DisplayComponent.write_full_row_string_centred(\"{text}\", {rows if rows else ""}) called.")
 		# Called on every cycle.
 
-		if rows.count == 0:
+		if len(rows) == 0:
 			rows = (ROW.TL,)
 
 		centred = text.center(Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE)
