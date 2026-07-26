@@ -17,6 +17,7 @@ from __future__ import annotations	# to avoid the circular reference on RemoteSL
 
 import Live
 from Live.Track import Track
+
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
 from ableton.v2.control_surface.elements import ButtonElement, SliderElement
 
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 
 from .DisplayComponent import DisplayComponent, ROW
 from ..consts import SLM, MXR, Constants, H, M
-from ..myLogger import log
+from ..myLogger import log, log_assignment, log_error, log_warning, log_info
 
 
 ####################################################################################################################
@@ -182,6 +183,7 @@ class MixerComponent(Component):
 			
 				map_mode = Live.MidiMap.MapMode.absolute
 				parameter = strip.slider_parameter()
+				log_assignment(strip_index, cc_no, str(parameter) if parameter is not None else "", "MixerComponent")
 				Live.MidiMap.map_midi_cc(midi_map_handle, parameter, Constants.Hardware.MIDI_CHANNEL, cc_no, map_mode, False)
 				continue
 			

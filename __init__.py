@@ -34,6 +34,7 @@ from .myLogger import *
 def create_instance(c_instance):
 	"""Create and return the Remote SL controller instance."""
 
+	set_log_component("__init__")
 	log("*-> Creating instance...")
 	instance = RemoteSL(c_instance)
 	instance.show_message("RemoteSL_Customised created...")

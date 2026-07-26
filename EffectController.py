@@ -14,7 +14,7 @@ import Live
 
 from .consts import Constants
 from .RemoteSLComponent import RemoteSLComponent
-from .myLogger import *
+from .myLogger import log, log_info, log_warning, log_error, log_assignment
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
@@ -39,7 +39,7 @@ class EffectController(RemoteSLComponent):
 
 		RemoteSLComponent.__init__(self, parent)
 		
-		log("EffectController.__init__() called.")
+		log_info("EffectController.__init__() called.")
 
 		self._parent = parent # ref. to the owning RemoteSL object.
 		self._display_controller = parent._display_component # ref. to the display.
@@ -66,7 +66,7 @@ class EffectController(RemoteSLComponent):
 		self.change_assigned_device(self._parent.song.appointed_device)
 		#self.reassign_strips() is called in change_assigned_device
 
-		log("<-----Returning from EffectController.__init__().")
+		log_info("<-----Returning from EffectController.__init__().")
 
 
 
@@ -77,7 +77,7 @@ class EffectController(RemoteSLComponent):
 	def disconnect(self):
 		"""Disconnect the effect controller from the currently assigned device."""
 
-		log("EffectController.disconnect() called")
+		log_info("EffectController.disconnect() called")
 			
 		self.change_assigned_device(None)
 
@@ -256,7 +256,7 @@ class EffectController(RemoteSLComponent):
 	def build_midi_map(self, midi_map_handle):
 		"""Create Live MIDI mappings for the effect controller strips."""
 		
-		log(f"EffectController.build_midi_map({midi_map_handle}) called.")
+		log_info(f"EffectController.build_midi_map({midi_map_handle}) called.")
 
 		# needs_takeover = True # never changed easier just to send false. 
 
@@ -275,8 +275,9 @@ class EffectController(RemoteSLComponent):
 
 			if parameter is not None:
 
-				log(f"\t|----->MAPPING: Strip {strip_index} (CC {primary_cc_no}) to parameter: {parameter.name}")
-				
+				#log(f"\t|----->MAPPING: Strip {strip_index} (CC {primary_cc_no}) to parameter: {parameter.name}")
+				log_assignment(strip_index, primary_cc_no, parameter.name, "EffectComponent")
+
 				# ASSIGN MAP MODE DYNAMICALLY BASED ON THE ROW
 				if strip_index < 8:
 					map_mode = Live.MidiMap.MapMode.absolute # Pots (0-7) are absolute
@@ -364,7 +365,7 @@ class EffectController(RemoteSLComponent):
 		# for note in Constants.Effect.DRUM_PAD_ROW:
 		# 	Live.MidiMap.forward_midi_note(self._parent.handle() , midi_map_handle, MIDI.SL_CHANNEL, note)
 
-		log(f"<-----Returning from EffectController.build_midi_map({midi_map_handle}).")
+		log_info(f"<-----Returning from EffectController.build_midi_map({midi_map_handle}).")
 
 
 
@@ -374,12 +375,12 @@ class EffectController(RemoteSLComponent):
 	@override
 	def refresh_state(self):
 		
-		log("EffectController.refresh_state() called.")
+		log_info("EffectController.refresh_state() called.")
 		
 		self.update_select_row_leds()
 		self.reassign_strips()
 
-		log("<-----Returning from EffectController.refresh_state() called.")
+		log_info("<-----Returning from EffectController.refresh_state() called.")
 
 
 
@@ -388,7 +389,7 @@ class EffectController(RemoteSLComponent):
 
 	def reassign_strips(self, force_rebuild=True):
 		
-		log(f"EffectController.__reassign_strips(force_rebuild={force_rebuild}) called.")
+		log_info(f"EffectController.__reassign_strips(force_rebuild={force_rebuild}) called.")
 		
 		page_up_value = Constants.Hardware.BUTTON_RELEASED
 		page_down_value = Constants.Hardware.BUTTON_RELEASED
@@ -478,7 +479,7 @@ class EffectController(RemoteSLComponent):
 		# 		self.send_midi((self.cc_status_byte(), cc_no, CC_VAL_BUTTON_RELEASED))
 
 
-		log(f"<-----Returning from EffectController.__reassign_strips(force_rebuild={force_rebuild}).")
+		log_info(f"<-----Returning from EffectController.__reassign_strips(force_rebuild={force_rebuild}).")
 
 
 	################################################################################################################
@@ -521,7 +522,7 @@ class EffectController(RemoteSLComponent):
 				
 
 		except Exception as e:
-			log(f"TOUCH ENGINE ERROR: {str(e)}")
+			log_error(f"TOUCH ENGINE ERROR: {str(e)}")
 
 
 	################################################################################################################

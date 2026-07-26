@@ -23,7 +23,7 @@ else:
 	def override(func):
 		return func
 
-from .consts import Constants, MIDI
+from .consts import Constants, MIDI, M
 from .Components.TransportComponent import TransportComponent
 from .Components.DisplayComponent import DisplayComponent
 from .EffectController import EffectController
@@ -45,6 +45,7 @@ class RemoteSL(ControlSurface):
 	def __init__(self, c_instance):
 		"""Initialise the Remote SL controller and its child components."""
 
+		set_log_component("RemoteSL")
 		log("RemoteSL.__init__() called.")
 
 		super(RemoteSL, self).__init__(c_instance)
@@ -340,16 +341,16 @@ class RemoteSL(ControlSurface):
 	def receive_midi(self, midi_bytes):
 		"""Route incoming MIDI messages to the effect or mixer controller."""
 
-		log(f"*->RemoteSL.receive_midi({str(midi_bytes)}) called.")
+		log_midi("IN", midi_bytes, "RemoteSL")
 
 		if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
-			log("Error: ...receive_mid() blank midi message received.")
+			log_error("Error: ...receive_mid() blank midi message received.")
 			return None
 
 		status = midi_bytes[0] & 0xf0
 		# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
 
-		log(f"\t----->status = {bin(status)}")
+		#log(f"\t----->status = {bin(status)}")
 
 		# if it's a midi note on or midi note off.
 		if status in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
@@ -362,7 +363,7 @@ class RemoteSL(ControlSurface):
 				self._effect_controller.receive_midi_note(note, velocity)
 				return None
 			
-			log("unknown MIDI message %s" % str(midi_bytes))
+			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
 			return None
 
 		# if it's a midi status update.
@@ -371,21 +372,13 @@ class RemoteSL(ControlSurface):
 			cc_no = midi_bytes[1]
 			cc_value = midi_bytes[2]
 
-			log("\t----->status byte received.")
+			#log("\t----->status byte received.")
 
 			if cc_no in Constants.Effect.ALL:
 				self._effect_controller.receive_midi_cc(cc_no, cc_value)
 				return None
-			
-			if cc_no in Constants.Mixer.ALL:
-				self._mixer_controller.receive_midi_cc(cc_no, cc_value)
-				return None
-
-			if cc_no in Constants.Transport.ALL:
-				self._tranport_component.handle_cc(cc_no, cc_value)
-				return None
 				
-			log("unknown MIDI message %s" % str(midi_bytes))
+			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
 			return None
 
 
@@ -457,7 +450,7 @@ class RemoteSL(ControlSurface):
 	def send_midi(self, midi_event_bytes : tuple[int, ...]):
 		"""Send MIDI bytes."""
 
-		log(f"RemoteSL.send_midi({' '.join(f'{h:02X}' for h in midi_event_bytes)}) called.")
+		log_midi("OUT", midi_event_bytes, "RemoteSL")
 
 		# check for bad midi bytes.
 		bad = False
@@ -471,7 +464,7 @@ class RemoteSL(ControlSurface):
 				bad = True
 
 		if bad:
-			log(f"Error: bad MIDI message sent: {midi_event_bytes}")
+			log_error(f"Error: bad MIDI message sent: {midi_event_bytes}", "RemoteSL")
 		
 		self._send_midi(midi_event_bytes)
 

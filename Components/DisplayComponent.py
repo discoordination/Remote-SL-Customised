@@ -24,7 +24,7 @@ else:
 		return func
 
 from ..consts import Constants, H, SYX
-from ..myLogger import log
+from ..myLogger import log, set_log_component
 
 
 
@@ -88,6 +88,7 @@ class DisplayComponent(Component):
 
 	def __init__(self, control_surface, name='DisplayComponent', *a, **k):
 
+		set_log_component("DisplayComponent")
 		log(f"DisplayComponent.__init__({control_surface},{name}) called.")
 
 		super().__init__(name=name, *a, **k)
