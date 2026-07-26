@@ -26,7 +26,7 @@ else:
 from .consts import Constants, MIDI, M
 from .Components.TransportComponent import TransportComponent
 from .Components.DisplayComponent import DisplayComponent
-from .EffectController import EffectController
+from .Components.EffectComponent import EffectComponent
 from .Components.MixerComponent import MixerComponent
 
 from .myLogger import *
@@ -55,10 +55,6 @@ class RemoteSL(ControlSurface):
 		with self.component_guard():
 			
 			#self.hardware_controls = {} #dictionary to hold controls.
-
-			# At some point we should mebbe split _components from controllers????
-			# TODO: self._components should be removed once all controllers are components. 
-			self._components : list[Component | EffectController] = []
 		
 			log("\t|----->Setting up free buttons...")
 
@@ -75,23 +71,22 @@ class RemoteSL(ControlSurface):
 			self._display_component = DisplayComponent(self)
 
 			log("\t|----->Building EffectController...")
-			self._effect_controller = EffectController(self)
+			self._effect_component = EffectComponent(self)
 
 			log("\t|----->Building MixerController...")
-			self._mixer_controller = MixerComponent(self)
+			self._mixer_component = MixerComponent(self)
 
 			log("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
-
-			self._transport_component.set_enabled(True)
-			self._display_component.set_enabled(True)
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
 			self.song.add_tempo_listener(self._tempo_changed)
 		
-			self._components.append(self._effect_controller)
 		
+		for component in self.components:
+			component.setEnabled(True)
+			#self._register_component
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
 		# self._update_hardware_delay = -1 # removed as why drop a tick here? to save 1 tick???
@@ -113,7 +108,7 @@ class RemoteSL(ControlSurface):
 			log(f"Error: num components is {len(self._components)} when it should be 4.")
 			raise ValueError(f"Error: num components is {len(self._components)} when it should be 4.")
 
-		for comp in self._components:
+		for comp in self.components:
 			log(comp)
 			#if comp._enabled == False:
 			#	raise ValueError(f"Error: Object {comp} is not enabled when it should be.")
@@ -184,10 +179,10 @@ class RemoteSL(ControlSurface):
 
 		# --- THE ABSOLUTE LOGIC GATE ---
 		# Check if our effect controller exists and if a lock is currently active
-		if hasattr(self, '_effect_controller') and self._effect_controller is not None:
+		if hasattr(self, '_effect_controller') and self._effect_component is not None:
 			
 			# IF LOCKED IS TRUE: Exit immediately to protect your active screen text from being wiped!
-			if getattr(self._effect_controller, '_assigned_device_is_locked', False) == True:
+			if getattr(self._effect_component, '_assigned_device_is_locked', False) == True:
 				log("HOOK ABORT: Controller is locked. Protecting active parameter text rows.")
 				return None
 		# --------------------------------
@@ -200,13 +195,13 @@ class RemoteSL(ControlSurface):
 			log("CLEAN SWAP ENGINE: Blank track caught. Wiping screen names...")
 			
 			# --- CRITICAL MEMORY RESET FOR THE ASSIGNED DEVICE ---
-			if hasattr(self, '_effect_controller') and self._effect_controller is not None:
+			if hasattr(self, '_effect_controller') and self._effect_component is not None:
 				# Force the parent container to drop its cached plugin reference
-				self._effect_controller._assigned_device = None
+				self._effect_component._assigned_device = None
 				
 				# Disconnect the 16 virtual channel strips so they let go of old macros
-				if hasattr(self._effect_controller, '_strips'):
-					for strip in self._effect_controller._strips:
+				if hasattr(self._effect_component, '_strips'):
+					for strip in self._effect_component._strips:
 						strip.assigned_parameter = None
 			# ----------------------------------------------------
 			
@@ -305,7 +300,7 @@ class RemoteSL(ControlSurface):
 
 		"""Lock the effect controller to the given device."""
 		super(RemoteSL, self).lock_to_device(device)
-		self._effect_controller.lock_to_device(device)
+		self._effect_component.lock_to_device(device)
 
 
 	################################################################################################################
@@ -360,7 +355,7 @@ class RemoteSL(ControlSurface):
 			
 			if note in Constants.Effect.DRUM_PADS:
 				# send drum pad note to effect controller.
-				self._effect_controller.receive_midi_note(note, velocity)
+				self._effect_component.receive_midi_note(note, velocity)
 				return None
 			
 			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
@@ -375,7 +370,7 @@ class RemoteSL(ControlSurface):
 			#log("\t----->status byte received.")
 
 			if cc_no in Constants.Effect.ALL:
-				self._effect_controller.receive_midi_cc(cc_no, cc_value)
+				self._effect_component.receive_midi_cc(cc_no, cc_value)
 				return None
 				
 			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
@@ -479,8 +474,8 @@ class RemoteSL(ControlSurface):
 		log(f"\t|----->REMOTE SL APPCON: DeviceAppointer passed device -> {str(device)}")
 		
 		# Ensure this points directly to your active effect controller instance
-		if self._effect_controller is not None:
-			self._effect_controller.set_appointed_device(device)
+		if self._effect_component is not None:
+			self._effect_component.set_appointed_device(device)
 		else:
 			log("***ERROR***: RemoteSL._effect_controller is None.")
 
@@ -567,7 +562,7 @@ class RemoteSL(ControlSurface):
 
 		log(f"RemoteSL.unlock_from_device({device}) called.")
 
-		self._effect_controller.unlock_from_device(device)
+		self._effect_component.unlock_from_device(device)
 
 
 	################################################################################################################

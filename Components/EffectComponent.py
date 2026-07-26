@@ -5,16 +5,19 @@
 
 
 """Effect-section controller logic for the Remote SL script."""
-from __future__ import annotations
+#from __future__ import annotations
 
-#from past.utils import old_div // <--- old python division not needed.
+
 
 import Live 
+from Live.Track import Track
+from Live.Song import Song
+from Live.DeviceParameter import DeviceParameter
+from Live.Device import Device
 
+from ableton.v2.control_surface import Component
 
-from .consts import Constants
-from .RemoteSLComponent import RemoteSLComponent
-from .myLogger import log, log_info, log_warning, log_error, log_assignment
+import time # To debounce the double button press.
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
@@ -25,24 +28,34 @@ else:
     def override(func):
         return func
 
-import time # To debounce the double button press.
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+	from ..RemoteSL import RemoteSL
+
+
+from ..consts import Constants
+from ..myLogger import log, log_info, log_warning, log_error, log_assignment, set_log_component
 
 
 ####################################################################################################################
 
-class EffectController(RemoteSLComponent):
+
+
+class EffectComponent(Component):
 	"""Handle effect-device selection, bank navigation, and parameter mapping."""
 
 
-	def __init__(self, parent):
+	def __init__(self, control_surface: RemoteSL, name='EffectComponent', *a, **k) -> None:
 		"""Initialise the controller state for the effect section."""
 
-		RemoteSLComponent.__init__(self, parent)
-		
-		log_info("EffectController.__init__() called.")
+		super().__init__(self, control_surface, song=control_surface.song, *a, **k)
 
-		self._parent = parent # ref. to the owning RemoteSL object.
-		self._display_controller = parent._display_component # ref. to the display.
+		set_log_component(name)
+		log_info(f"EffectController.__init__({control_surface}, {name}) called.")
+
+		self._control_surface = control_surface # ref. to the owning RemoteSL object.
+		self._display_component = control_surface._display_component # ref. to the display.
 		
 		self._last_selected_track = None
 		self._blank_prompt_is_drawn = False
@@ -63,18 +76,27 @@ class EffectController(RemoteSLComponent):
 		self._strips : list[EffectChannelStrip] = [EffectChannelStrip(self) for _ in range(16)]
 		
 		# 2. Trigger the dynamic functions LAST once all data structures exist
-		self.change_assigned_device(self._parent.song.appointed_device)
+		self.change_assigned_device(self.song.appointed_device)
 		#self.reassign_strips() is called in change_assigned_device
 
 		log_info("<-----Returning from EffectController.__init__().")
 
+
+	################################################################################################################
+
+	@property
+	@override
+	def song(self) -> Song:
+		s = super().song
+		assert s is not None
+		return s
 
 
 	################################################################################################################
 
 
 	@override
-	def disconnect(self):
+	def disconnect(self) -> None:
 		"""Disconnect the effect controller from the currently assigned device."""
 
 		log_info("EffectController.disconnect() called")
@@ -85,94 +107,10 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	@override
-	def update_display(self):
-		"""Fires continuously on Ableton's background frame clock to monitor device state."""
-		
-		# --- FIX: THE ABSOLUTE UPDATE DISPLAY LOCK ENVELOPE ---
-		# If the controller is locked, we completely freeze the parameter tracking view!
-		if getattr(self, '_assigned_device_is_locked', False) == True:
-			
-			# Monitor if the locked device was physically deleted from the session set
-			try:
-				if self._assigned_device is None or not self._assigned_device.canonical_parent:
-					raise Exception("Device deleted")
-			except Exception:
-				log("LOCK BREAK: Locked device was physically deleted! Releasing control maps...")
-				self._assigned_device_is_locked = False
-				self.unlock_from_device(self._assigned_device)
-				self._assigned_device = self._parent.song.appointed_device
-				self.change_assigned_device(self._assigned_device)
-				
-			# If the device is alive and locked, EXIT IMMEDIATELY.
-			# This blocks the empty track lane check below from ever executing!
-			return None
-		
-		# ------------------------------------------------------
-
-		# Fetch exactly what device Ableton's viewport highlights right now
-		current_track_device = self.song.view.selected_track.view.selected_device
-		
-		# --- CHANNELS MONITOR BALANCED RE-SYNC GUARD (Runs ONLY when unlocked) ---
-		if current_track_device is None and self._assigned_device is not None:
-			log("POLLING ENGINE: Empty track lane detected. Resetting references...")
-			self._assigned_device = None
-			for strip in self._strips:
-				strip.assigned_parameter = None
-			self.reassign_strips(force_rebuild=True)
-			return None
-			
-		if current_track_device is None and self._assigned_device is None:
-			return None
-		# ------------------------------------------------------------------------
-		
-		
-		moved_strip_index = None
-
-		for strip_index, strip in enumerate(self._strips):
-			param = strip.assigned_parameter
-			if param is not None:
-				current_val = param.value
-				
-				# Check if the value shifted since the last frame scan
-				if hasattr(strip, '_last_value') and strip._last_value is not None and current_val != strip._last_value:
-					strip._last_value = current_val
-					moved_strip_index = strip_index
-					break
-				
-				strip._last_value = current_val
-
-
-		# Update the screen text ONLY if a physical hand movement row shift actually happened
-		if moved_strip_index is not None:
-			new_row = "pots" if moved_strip_index < 8 else "encoders"
-			
-			if not hasattr(self, '_current_display_row'):
-				self._current_display_row = "pots"
-				
-			if self._current_display_row != new_row:
-				self._current_display_row = new_row
-				
-				# --- SYNC THE VIRTUAL PAGE INDEX BASED ON ACTIVE ROW FLIP ---
-				if not hasattr(self, '_display_page_index'):
-					self._display_page_index = 0
-				
-				# If we are on the first 16-parameter block, align the page number
-				if self._bank == 0:
-					self._display_page_index = 0 if new_row == "pots" else 1
-				# -------------------------------------------------------------
-				
-				# Update text only, skip the MIDI map layout reconstruction!
-				self.reassign_strips(force_rebuild=False)
-
-
-	################################################################################################################
-
-
-	def receive_midi_cc(self, cc_no, cc_value):
+	def receive_midi_cc(self, cc_no: int, cc_value: int) -> None:
 		"""Route incoming CC events to the correct effect-control handler."""
 
-		log(f"EffectController.receive_midi_cc({cc_no}, {cc_value}) called.")
+		log_info(f"EffectController.receive_midi_cc({cc_no}, {cc_value}) called.")
 
 		# --- THE ABSOLUTE GHOST MOVEMENT KILL SWITCH ---
 		# If no device is currently assigned to the controller (empty track state), 
@@ -211,10 +149,10 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def receive_midi_note(self, note, velocity):
+	def receive_midi_note(self, note: int, velocity: int):
 		"""Handle note events from the drum-pad row for the effect section."""
 
-		log("receive_midi_note() called.")
+		log_info("receive_midi_note() called.")
 		if note in Constants.Effect.DRUM_PADS:
 			return None
 
@@ -224,11 +162,12 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def _on_selected_track_changed(self):
+	def _on_selected_track_changed(self) -> None:
 		"""Fires instantly whenever you select a different track channel lane in Live."""
 
 		try:
-			track = self.song.view.selected_track
+
+			track: Track = self.song.view.selected_track
 			
 			# --- ABSOLUTE EMPTY TRACK VALIDATION CHECK ---
 			# Look directly inside the track's physical device list array
@@ -245,7 +184,7 @@ class EffectController(RemoteSLComponent):
 			self.change_assigned_device(current_device)
 			
 		except Exception as e:
-			log(f"TRACK CHANGED ERROR: {str(e)}")
+			log_error(f"TRACK CHANGED ERROR: {str(e)}")
 
 
 
@@ -253,7 +192,7 @@ class EffectController(RemoteSLComponent):
 
 
 	@override
-	def build_midi_map(self, midi_map_handle):
+	def build_midi_map(self, midi_map_handle : int) -> None:
 		"""Create Live MIDI mappings for the effect controller strips."""
 		
 		log_info(f"EffectController.build_midi_map({midi_map_handle}) called.")
@@ -372,8 +311,8 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	@override
-	def refresh_state(self):
+	#@override
+	def refresh_state(self) -> None:
 		
 		log_info("EffectController.refresh_state() called.")
 		
@@ -387,7 +326,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def reassign_strips(self, force_rebuild=True):
+	def reassign_strips(self, force_rebuild: bool = True) -> None:
 		
 		log_info(f"EffectController.__reassign_strips(force_rebuild={force_rebuild}) called.")
 		
@@ -427,7 +366,7 @@ class EffectController(RemoteSLComponent):
 			if self._bank > 0:
 				page_down_value = Constants.Hardware.BUTTON_PRESSED
 
-			if self._bank + 1 < self.__number_of_parameter_banks():
+			if self._bank + 1 < self._number_of_parameter_banks():
 				page_up_value = Constants.Hardware.BUTTON_PRESSED
 
 			self.report_bank()
@@ -447,7 +386,7 @@ class EffectController(RemoteSLComponent):
 				active_params = parameters[8:]
 
 
-			self._display_controller.setup_left_display(active_names, active_params)
+			self._display_component.setup_left_display(active_names, active_params)
 
 
 		else:
@@ -462,7 +401,7 @@ class EffectController(RemoteSLComponent):
 			param_names = ["Please select a Device in Live to edit it..."]
 			parameters = [None for _ in range(8)]
 			
-			self._display_controller.setup_left_display(param_names, parameters)
+			self._display_component.setup_left_display(param_names, parameters)
 
 
 		# Wrap this line so it only fires when explicitly requested
@@ -486,7 +425,7 @@ class EffectController(RemoteSLComponent):
 
 
 
-	def __handle_row_display_switch(self, moving_strip):
+	def __handle_row_display_switch(self, moving_strip) -> None:
 		"""Calculate which row was moved and dynamically sync the virtual display page index."""
 
 		log(f"EffectController.__handle_row_display_switch() called.")
@@ -528,7 +467,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def __handle_page_up_down_ccs(self, cc_no, cc_value):
+	def __handle_page_up_down_ccs(self, cc_no: int, cc_value: int) -> None:
 		"""Handle physical banking buttons to toggle display rows before swapping MIDI maps."""
 	
 		# Only process the command when the user physically presses the button down
@@ -586,9 +525,9 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def __handle_select_button_ccs(self, cc_no, cc_value):
+	def __handle_select_button_ccs(self, cc_no: int, cc_value: int) -> None:
 		
-		log(f"__handle_select_button_ccs({cc_no}, {cc_value}) called.")
+		log_info(f"__handle_select_button_ccs({cc_no}, {cc_value}) called.")
 		
 		if cc_no == Constants.Effect.SELECT_TOP_BUTTON_ROW:
 			if cc_value == Constants.Hardware.BUTTON_PRESSED:
@@ -606,7 +545,7 @@ class EffectController(RemoteSLComponent):
 				log("LOCK BUTTON PRESSED: Handing toggle request to root script...")
 			
 				# 2. Fire the native toggle command in Live via the master script
-				self._parent.toggle_lock()
+				self._control_surface.toggle_lock()
 				
 				# 3. Engage the 2-second visual hold timer (10 frame ticks)
 				self._lock_popup_ticks = 10
@@ -615,9 +554,10 @@ class EffectController(RemoteSLComponent):
 				if not was_already_locked:
 					log("LOCK ROUTE: Engaging lock_to_device...")
 					# This now sets the flag to True and updates select LEDs natively
+					
 					self.lock_to_device(self.song.appointed_device)
 					
-					self._display_controller.show_timed_message("Device Locked!", duration_seconds=2.0)	
+					self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
 
 				else:
 					log("LOCK ROUTE: Engaging unlock_from_device...")
@@ -644,8 +584,7 @@ class EffectController(RemoteSLComponent):
 					# ------------------------------------------------------------------------
 					
 					# 4. Flash your centralized timed message popup for exactly 2 seconds
-					self._display_controller.show_timed_message("Device Unlocked", duration_seconds=2.0)
-
+					self._display_component.show_timed_message("Device Unlocked", duration_seconds=2.0)
 
 				return None
 
@@ -684,7 +623,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def update_select_row_leds(self):
+	def update_select_row_leds(self) -> None:
 		
 		if self._assigned_device_is_locked:
 			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_TOP_BUTTON_ROW, Constants.Hardware.BUTTON_PRESSED))
@@ -695,7 +634,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def lock_to_device(self, device):
+	def lock_to_device(self, device: Optional[Device]) -> None:
 		"""Natively handle the hardware feedback loop when locking."""
 
 		if device:
@@ -708,7 +647,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def unlock_from_device(self, device):
+	def unlock_from_device(self, device: Optional[Device]) -> None:
 		"""Natively handle the hardware feedback loop when unlocking."""
 
 		if device and device == self._assigned_device:
@@ -722,9 +661,9 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def report_bank(self):
+	def report_bank(self) -> None:
 		
-		log("EffectController.__report_bank() called.")
+		log_info("EffectController.__report_bank() called.")
 		
 		if self._show_bank:
 			self._show_bank = False
@@ -734,12 +673,12 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def show_bank_select(self, bank_name):
+	def show_bank_select(self, bank_name: str) -> None:
 		
-		log(f"EffectController.__show_bank_select({bank_name}) called.")
+		log_info(f"EffectController.__show_bank_select({bank_name}) called.")
 
 		if self._assigned_device:
-			self._parent.show_message(
+			self._control_surface.show_message(
 				str(self._assigned_device.name + " Bank: " + bank_name)
 			)
 
@@ -747,9 +686,9 @@ class EffectController(RemoteSLComponent):
 	###############################################################################################################
 
 
-	def restore_bank(self, bank):
+	def restore_bank(self, bank: int) -> None:
 		
-		log("EffectController.restore_bank() called.")
+		log_info("EffectController.restore_bank() called.")
 
 		if self._assigned_device_is_locked:
 			self._bank = bank
@@ -759,10 +698,10 @@ class EffectController(RemoteSLComponent):
 	###############################################################################################################
 
 
-	def set_appointed_device(self, device):
+	def set_appointed_device(self, device: Device) -> None:
 		"""Public receiver function called by RemoteSL.py."""
 
-		log(f"EffectController.set_appointed_device(): Received device pointer -> {str(device)}")
+		log_info(f"EffectController.set_appointed_device(): Received device pointer -> {str(device)}")
 
 		# This isn't called if the device is locked and you drop a new device on the locked channel.
 
@@ -777,7 +716,7 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def change_assigned_device(self, device):
+	def change_assigned_device(self, device: Optional[Device]) -> None:
 		
 		"""Safely update active device references across track focus shifts."""
 		log(f"EffectController.__change_assigned_device({str(device)}) called.")
@@ -794,24 +733,24 @@ class EffectController(RemoteSLComponent):
 		# Force a single rebuild of the layouts safely (force_rebuild=True maps MIDI)
 		self.reassign_strips(force_rebuild=True)
 
-		log("<-----Returning from EffectController.change_assigned_device().")
+		log_info("<-----Returning from EffectController.change_assigned_device().")
 
 
 	################################################################################################################
 
 
-	def __parameter_list_of_device_changed(self):
+	# def __parameter_list_of_device_changed(self):
 		
-		log("EffectController.__parameter_list_of_device_changed() called.")
-		self.reassign_strips()
+	# 	log("EffectController.__parameter_list_of_device_changed() called.")
+	# 	self.reassign_strips()
 
 
 	################################################################################################################
 
 
-	def __number_of_parameter_banks(self):
+	def _number_of_parameter_banks(self) -> int:
 		
-		log("EffectController.__number_of_parameter_banks() called.")
+		log_info("EffectController.__number_of_parameter_banks() called.")
 
 		result = 0
 
@@ -827,8 +766,95 @@ class EffectController(RemoteSLComponent):
 	################################################################################################################
 
 
-	def update(self):
-		log("EffectController.update() called.")	
+	@override
+	def update(self) -> None:
+		"""Fires continuously on Ableton's background frame clock to monitor device state."""
+
+		log_info("EffectComponent.update() called.")
+		
+		# --- FIX: THE ABSOLUTE UPDATE DISPLAY LOCK ENVELOPE ---
+		# If the controller is locked, we completely freeze the parameter tracking view!
+		if getattr(self, '_assigned_device_is_locked', False) == True:
+			
+			# Monitor if the locked device was physically deleted from the session set
+			try:
+				if self._assigned_device is None or not self._assigned_device.canonical_parent:
+					raise Exception("Device deleted")
+
+			except Exception:
+				
+				log("LOCK BREAK: Locked device was physically deleted! Releasing control maps...")
+				self._assigned_device_is_locked = False
+				self.unlock_from_device(self._assigned_device)
+				self._assigned_device = self._control_surface.song.appointed_device
+				if self._assigned_device is not None:
+					self.change_assigned_device(self._assigned_device)
+				
+			# If the device is alive and locked, EXIT IMMEDIATELY.
+			# This blocks the empty track lane check below from ever executing!
+			return None
+		
+		# ------------------------------------------------------
+
+		# Fetch exactly what device Ableton's viewport highlights right now
+		current_track_device = self.song.view.selected_track.view.selected_device
+		
+		# --- CHANNELS MONITOR BALANCED RE-SYNC GUARD (Runs ONLY when unlocked) ---
+		if current_track_device is None and self._assigned_device is not None:
+			log("POLLING ENGINE: Empty track lane detected. Resetting references...")
+			self._assigned_device = None
+			for strip in self._strips:
+				strip.assigned_parameter = None
+			self.reassign_strips(force_rebuild=True)
+			return None
+			
+		if current_track_device is None and self._assigned_device is None:
+			return None
+		# ------------------------------------------------------------------------
+		
+		
+		moved_strip_index = None
+
+		for strip_index, strip in enumerate(self._strips):
+			param = strip.assigned_parameter
+			if param is not None:
+				current_val = param.value
+				
+				# Check if the value shifted since the last frame scan
+				if hasattr(strip, '_last_value') and strip._last_value is not None and current_val != strip._last_value:
+					strip._last_value = current_val
+					moved_strip_index = strip_index
+					break
+				
+				strip._last_value = current_val
+
+
+		# Update the screen text ONLY if a physical hand movement row shift actually happened
+		if moved_strip_index is not None:
+			new_row = "pots" if moved_strip_index < 8 else "encoders"
+			
+			if not hasattr(self, '_current_display_row'):
+				self._current_display_row = "pots"
+				
+			if self._current_display_row != new_row:
+				self._current_display_row = new_row
+				
+				# --- SYNC THE VIRTUAL PAGE INDEX BASED ON ACTIVE ROW FLIP ---
+				if not hasattr(self, '_display_page_index'):
+					self._display_page_index = 0
+				
+				# If we are on the first 16-parameter block, align the page number
+				if self._bank == 0:
+					self._display_page_index = 0 if new_row == "pots" else 1
+				# -------------------------------------------------------------
+				
+				# Update text only, skip the MIDI map layout reconstruction!
+				self.reassign_strips(force_rebuild=False)
+
+
+	################################################################################################################
+
+
 
 
 	################################################################################################################
@@ -850,9 +876,9 @@ class EffectChannelStrip(object):
 
 	################################################################################################################
 
-	def __init__(self, mixer_controller_parent):
+	def __init__(self, mixer_component):
 		
-		self._mixer_controller : EffectController = mixer_controller_parent
+		self._mixer_component : EffectComponent = mixer_component
 		self._assigned_parameter: Live.DeviceParameter.DeviceParameter | None = None
 		self._last_value : float = 0.0
 
@@ -872,7 +898,7 @@ class EffectChannelStrip(object):
 
 
 	@property
-	def assigned_parameter(self) -> Live.DeviceParameter.DeviceParameter | None:
+	def assigned_parameter(self) -> DeviceParameter | None:
 		"""Getter: Safely returns the currently bound device parameter or None."""
 		return self._assigned_parameter
 	
