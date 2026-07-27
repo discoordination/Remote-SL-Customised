@@ -61,10 +61,9 @@ class TransportComponent(Component):
 		self._rewind_button: 	ButtonElement 
 		self._fforward_button: 	ButtonElement
 
-		self._create_buttons()
+		self._create_controls()
 		self._add_button_listeners()
 		self.song.add_record_mode_listener(self._on_record_mode_changed)
-
 
 		log(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
 
@@ -117,7 +116,7 @@ class TransportComponent(Component):
 	################################################################################################################
 
 
-	def _create_buttons(self):
+	def _create_controls(self):
 
 		log("TransportComponent._create_buttons() called.")
 

@@ -72,12 +72,15 @@ class MixerComponent(Component):
 		"""Initialise the mixer controller state and display references."""
 		
 		super().__init__(name=name, song=control_surface.song, *a, **k)
+
 		set_log_component("MixerComponent")
 		log_info(f"MixerComponent.__init__({control_surface}, {name}) called.")
 
 		self._control_surface: RemoteSL = control_surface
 		self._display_component: DisplayComponent = control_surface._display_component
-	
+
+		# ------------- Controls ----------------
+
 		self._btn_page_up: 	  ButtonElement
 		self._btn_page_down:  ButtonElement
 
@@ -88,6 +91,8 @@ class MixerComponent(Component):
 		self._btns_top_row:	list[ButtonElement]
 		self._btns_btm_row:	list[ButtonElement]
 
+		# ---------------------------------------
+
 		self._strip_offset: int = 0
 		self._slider_mode: int = SLM.VOLUME
 		self._last_send_index: int = 0
@@ -96,7 +101,7 @@ class MixerComponent(Component):
 		self._assigned_tracks: list[Track] = []
 		self._layout_mode: LayoutMode = LayoutMode.STANDARD
 
-		self._create_buttons()
+		self._create_controls()
 		self._add_button_listeners()
 
 		self.song.add_visible_tracks_listener(self._on_tracks_added_or_deleted)
@@ -199,7 +204,7 @@ class MixerComponent(Component):
 	################################################################################################################
 
 
-	def _create_buttons(self) -> None:
+	def _create_controls(self) -> None:
 		
 		self._btn_page_up: 	  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_UP)
 		self._btn_page_down:  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_DOWN)
@@ -547,7 +552,7 @@ class MixerComponent(Component):
 	@override
 	def update(self) -> None:
 		super().update()
-		log_info("MixerComponent.update() called.")
+		#log_info("MixerComponent.update() called.")
 
 
 	################################################################################################################

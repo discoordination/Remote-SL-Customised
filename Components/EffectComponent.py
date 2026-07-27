@@ -1,21 +1,19 @@
 ####################################################################################################################
 # Source Generated with Decompyle++
-# File: EffectController.pyc (Python 3.11)
+# File: EffectComponent.pyc (Python 3.11)
 ####################################################################################################################
 
-
 """Effect-section controller logic for the Remote SL script."""
-#from __future__ import annotations
+from __future__ import annotations
 
-
-
-import Live 
 from Live.Track import Track
 from Live.Song import Song
 from Live.DeviceParameter import DeviceParameter
 from Live.Device import Device
+from Live import MidiMap
 
-from ableton.v2.control_surface import Component
+from ableton.v2.control_surface import Component, MIDI_CC_TYPE
+from ableton.v2.control_surface.elements import ButtonElement
 
 import time # To debounce the double button press.
 
@@ -34,8 +32,9 @@ if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
 
 
-from ..consts import Constants
+from ..consts import Constants, H, FX
 from ..myLogger import log, log_info, log_warning, log_error, log_assignment, set_log_component
+from .DisplayComponent import DisplayComponent
 
 
 ####################################################################################################################
@@ -45,24 +44,39 @@ from ..myLogger import log, log_info, log_warning, log_error, log_assignment, se
 class EffectComponent(Component):
 	"""Handle effect-device selection, bank navigation, and parameter mapping."""
 
-
-	def __init__(self, control_surface: RemoteSL, name='EffectComponent', *a, **k) -> None:
+	def __init__(self, control_surface: RemoteSL, name: str = 'EffectComponent', *a, **k) -> None:
 		"""Initialise the controller state for the effect section."""
 
-		super().__init__(self, control_surface, song=control_surface.song, *a, **k)
+		super().__init__(name = name, song = control_surface.song, *a, **k)
 
 		set_log_component(name)
-		log_info(f"EffectController.__init__({control_surface}, {name}) called.")
+		log_info(f"EffectComponent.__init__({control_surface}, {name}) called.")
 
-		self._control_surface = control_surface # ref. to the owning RemoteSL object.
-		self._display_component = control_surface._display_component # ref. to the display.
+		self._control_surface: RemoteSL = control_surface # ref. to the owning RemoteSL object.
+		self._display_component: DisplayComponent = control_surface._display_component # ref. to the display.
+
+		# ------------- Controls ----------------
+		self._btn_page_up      : ButtonElement
+		self._btn_page_down    : ButtonElement
+		self._btn_sel_encoders : ButtonElement
+		self._btn_sel_top_btns : ButtonElement
+		self._btn_sel_pots 	   : ButtonElement
+		self._btn_sel_btm_btns : ButtonElement
+		self._btn_sel_dpads	   : ButtonElement
+		
+		self._buttons_upper_row  : list[ButtonElement]
+		self._buttons_bottom_row : list[ButtonElement]
+
+		# --------------------------------------
+
+		self._create_controls()
+		self._add_button_listeners()
 		
 		self._last_selected_track = None
 		self._blank_prompt_is_drawn = False
 
 		# --- DYNAMIC DISPLAY STATE TRACKING ---
 		self._current_display_row = "pots" # Defaults to pots on startup
-		# --------------------------------------
 
 		self._assigned_device_is_locked : bool = False
 		self._assigned_device = None
@@ -76,10 +90,10 @@ class EffectComponent(Component):
 		self._strips : list[EffectChannelStrip] = [EffectChannelStrip(self) for _ in range(16)]
 		
 		# 2. Trigger the dynamic functions LAST once all data structures exist
-		self.change_assigned_device(self.song.appointed_device)
+		self._change_assigned_device(self.song.appointed_device)
 		#self.reassign_strips() is called in change_assigned_device
 
-		log_info("<-----Returning from EffectController.__init__().")
+		log_info("<-----Returning from EffectComponent.__init__().")
 
 
 	################################################################################################################
@@ -95,97 +109,18 @@ class EffectComponent(Component):
 	################################################################################################################
 
 
-	@override
-	def disconnect(self) -> None:
-		"""Disconnect the effect controller from the currently assigned device."""
+	def _add_button_listeners(self):
 
-		log_info("EffectController.disconnect() called")
-			
-		self.change_assigned_device(None)
+		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)     
+		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
+		self._btn_sel_encoders.add_value_listener(self._on_btn_sel_encoders_pressed)
+		self._btn_sel_top_btns.add_value_listener(self._on_btn_sel_top_btns_pressed)
+		self._btn_sel_pots.add_value_listener(self._on_btn_sel_pots_pressed)
+		self._btn_sel_btm_btns.add_value_listener(self._on_btn_sel_btm_btns_pressed)
+		self._btn_sel_dpads.add_value_listener(self._on_btn_sel_dpads_pressed)
 
-
-	################################################################################################################
-
-
-	def receive_midi_cc(self, cc_no: int, cc_value: int) -> None:
-		"""Route incoming CC events to the correct effect-control handler."""
-
-		log_info(f"EffectController.receive_midi_cc({cc_no}, {cc_value}) called.")
-
-		# --- THE ABSOLUTE GHOST MOVEMENT KILL SWITCH ---
-		# If no device is currently assigned to the controller (empty track state), 
-		# completely discard all incoming knob and encoder turns at the gate!
-		# This stops broken channel strip memory references from manually tweaking your old plugins.
-		if self._assigned_device is None:
-			log("GHOST GUARD: Discarded knob movement because track is empty.")
-			return None
-		# -----------------------------------------------
-
-		if cc_no in Constants.Effect.NAVIGATION:
-			self.__handle_page_up_down_ccs(cc_no, cc_value)
-			return None
-		
-		if cc_no in Constants.Effect.SELECT_BUTTONS:
-			self.__handle_select_button_ccs(cc_no, cc_value)
-			return None
-		
-		if cc_no in Constants.Effect.UPPER_BUTTONS:
-			strip = self._strips[cc_no - Constants.Effect.UPPER_BUTTON_BASE]
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				strip.on_button_pressed()
-			return None
-		
-		if cc_no in Constants.Effect.POTS:
-			# Let Live take ownership of the pot row for device-parameter mapping.
-			return None
-		
-		if cc_no in Constants.Effect.ENCODERS:
-			return None
-		
-		if cc_no in Constants.Effect.LOWER_BUTTONS:
-			return None
-
-
-	################################################################################################################
-
-
-	def receive_midi_note(self, note: int, velocity: int):
-		"""Handle note events from the drum-pad row for the effect section."""
-
-		log_info("receive_midi_note() called.")
-		if note in Constants.Effect.DRUM_PADS:
-			return None
-
-		return None
-
-
-	################################################################################################################
-
-
-	def _on_selected_track_changed(self) -> None:
-		"""Fires instantly whenever you select a different track channel lane in Live."""
-
-		try:
-
-			track: Track = self.song.view.selected_track
-			
-			# --- ABSOLUTE EMPTY TRACK VALIDATION CHECK ---
-			# Look directly inside the track's physical device list array
-			if track is None or len(track.devices) == 0:
-				log("TRACK CHANGED LOGIC: Track has 0 physical devices. Forcing clear...")
-				self.change_assigned_device(None)
-				return None
-			# ---------------------------------------------
-
-			# If the track actually has devices, safely extract the highlighted target
-			current_device = track.view.selected_device
-			log(f"TRACK CHANGED LOGIC: Active device is now -> {str(current_device)}")
-			
-			self.change_assigned_device(current_device)
-			
-		except Exception as e:
-			log_error(f"TRACK CHANGED ERROR: {str(e)}")
-
+		[button.add_value_listener(self._on_top_row_button_pressed, identify_sender = True) for button in self._buttons_upper_row]
+		[button.add_value_listener(self._on_btm_row_button_pressed, identify_sender = True) for button in self._buttons_bottom_row]
 
 
 	################################################################################################################
@@ -195,7 +130,7 @@ class EffectComponent(Component):
 	def build_midi_map(self, midi_map_handle : int) -> None:
 		"""Create Live MIDI mappings for the effect controller strips."""
 		
-		log_info(f"EffectController.build_midi_map({midi_map_handle}) called.")
+		log_info(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
 
 		# needs_takeover = True # never changed easier just to send false. 
 
@@ -219,11 +154,11 @@ class EffectComponent(Component):
 
 				# ASSIGN MAP MODE DYNAMICALLY BASED ON THE ROW
 				if strip_index < 8:
-					map_mode = Live.MidiMap.MapMode.absolute # Pots (0-7) are absolute
+					map_mode = MidiMap.MapMode.absolute # Pots (0-7) are absolute
 				else:
-					map_mode = Live.MidiMap.MapMode.relative_smooth_signed_bit # Encoders (8-15) are relative
+					map_mode = MidiMap.MapMode.relative_smooth_signed_bit # Encoders (8-15) are relative
 				
-				Live.MidiMap.map_midi_cc(
+				MidiMap.map_midi_cc(
 					midi_map_handle,
 					parameter,
 					Constants.Hardware.MIDI_CHANNEL,
@@ -304,131 +239,87 @@ class EffectComponent(Component):
 		# for note in Constants.Effect.DRUM_PAD_ROW:
 		# 	Live.MidiMap.forward_midi_note(self._parent.handle() , midi_map_handle, MIDI.SL_CHANNEL, note)
 
-		log_info(f"<-----Returning from EffectController.build_midi_map({midi_map_handle}).")
-
-
-
-	################################################################################################################
-
-
-	#@override
-	def refresh_state(self) -> None:
-		
-		log_info("EffectController.refresh_state() called.")
-		
-		self.update_select_row_leds()
-		self.reassign_strips()
-
-		log_info("<-----Returning from EffectController.refresh_state() called.")
-
+		log_info(f"<-----Returning from EffectComponent.build_midi_map({midi_map_handle}).")
 
 
 	################################################################################################################
 
 
-	def reassign_strips(self, force_rebuild: bool = True) -> None:
+	def _change_assigned_device(self, device: Optional[Device]) -> None:
+		"""Safely update active device references across track focus shifts."""
+
+		log(f"EffectComponent.__change_assigned_device({str(device)}) called.")
 		
-		log_info(f"EffectController.__reassign_strips(force_rebuild={force_rebuild}) called.")
+		# Set the master reference pointer to the device object handed down by Live
+		self._assigned_device = device
 		
-		page_up_value = Constants.Hardware.BUTTON_RELEASED
-		page_down_value = Constants.Hardware.BUTTON_RELEASED
-		device = self._assigned_device
+		# Reset view layout page markers ONLY if we are browsing tracks dynamically
+		if not getattr(self, '_assigned_device_is_locked', False):
+			self._bank = 0
+			self._display_page_index = 0
+			self._current_display_row = "pots"
+		
+		# Force a single rebuild of the layouts safely (force_rebuild=True maps MIDI)
+		self.reassign_strips(force_rebuild=True)
 
-
-		if device is not None:
-			
-			log("Device valid...")
-			self._blank_prompt_is_drawn = False
-
-			param_index = 0
-			param_names = []
-			parameters = []
-
-			for strip in self._strips:
-				
-				param = None
-				name = ""
-				new_index = param_index + self._bank * 16
-
-				device_parameters = device.parameters[1:]
-
-				if new_index < len(device_parameters):
-					param = device_parameters[new_index]
-				
-				if param:
-					name = param.name
-
-				strip.assigned_parameter = param
-				parameters.append(param)
-				param_names.append(name)
-				param_index += 1
-
-			if self._bank > 0:
-				page_down_value = Constants.Hardware.BUTTON_PRESSED
-
-			if self._bank + 1 < self._number_of_parameter_banks():
-				page_up_value = Constants.Hardware.BUTTON_PRESSED
-
-			self.report_bank()
-
-			# --- FIX: DYNAMIC RE-SLICING BASED ON ACTIVE DISPLAY ROW ---
-			# Check if the tracking variable exists (or initialize it on the fly)
-			if not hasattr(self, '_current_display_row'):
-				self._current_display_row = "pots"
-
-			if self._current_display_row == "pots":
-				# Left Screen gets items 0-7 (Pots)
-				active_names = param_names[:8]
-				active_params = parameters[:8]
-			else:
-				# Left Screen gets items 8-15 (Encoders)
-				active_names = param_names[8:]
-				active_params = parameters[8:]
-
-
-			self._display_component.setup_left_display(active_names, active_params)
-
-
-		else:
-			# This is for if no device is selected.
-
-			for strip in self._strips:
-				strip.assigned_parameter = None
-
-			log("CLEARING SCREEN: Caching original single-string text prompt...")
-			
-			# Save a pure 1-item text string array inside the display controller variables
-			param_names = ["Please select a Device in Live to edit it..."]
-			parameters = [None for _ in range(8)]
-			
-			self._display_component.setup_left_display(param_names, parameters)
-
-
-		# Wrap this line so it only fires when explicitly requested
-		if force_rebuild:
-			self.request_rebuild_midi_map() # <--- suspicious as rebuild_midi_map calls this some of the time.
-
-
-		# if self.support_mkII():
-		# 	log("*** ERROR *** I should not be seeing mkii code...")
-		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_DOWN, page_down_value))
-		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_UP, page_up_value))
-
-		# 	for cc_no in fx_upper_button_row_ccs:
-		# 		self.send_midi((self.cc_status_byte(), cc_no, CC_VAL_BUTTON_RELEASED))
-
-
-		log_info(f"<-----Returning from EffectController.__reassign_strips(force_rebuild={force_rebuild}).")
+		log_info("<-----Returning from EffectComponent.change_assigned_device().")
 
 
 	################################################################################################################
 
 
+	def _create_controls(self):
+		
+		self._btn_page_up      = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.PAGE_UP)
+		self._btn_page_down    = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.PAGE_DOWN)
+		self._btn_sel_encoders = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_ENCODER)
+		self._btn_sel_top_btns = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_TOP_BUTTON_ROW)
+		self._btn_sel_pots 	   = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_POTS)
+		self._btn_sel_btm_btns = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_BOTTOM_BUTTON_ROW)
+		self._btn_sel_dpads	   = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_DRUM_PAD)
 
-	def __handle_row_display_switch(self, moving_strip) -> None:
+		self._buttons_upper_row  = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc) for cc in FX.UPPER_BUTTONS]
+		self._buttons_bottom_row = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc) for cc in FX.UPPER_BUTTONS]
+
+
+	################################################################################################################
+
+
+	@override
+	def disconnect(self) -> None:
+		"""Disconnect the effect controller from the currently assigned device."""
+
+		log_info("EffectComponent.disconnect() called")
+		
+		self._change_assigned_device(None)
+		self._remove_button_listeners()
+
+
+	################################################################################################################
+
+
+	def _get_num_parameter_banks(self) -> int:
+		
+		log_info("EffectComponent._get_num_parameter_banks() called.")
+
+		result = 0
+
+		if self._assigned_device is not None:
+			param_count = len(self._assigned_device.parameters)
+			
+			# Use double-slash '//' for clean integer floor division
+			result = (param_count // 8) + int(param_count % 8 != 0)
+		
+		return result
+
+
+	################################################################################################################
+
+
+	def _handle_row_display_switch(self, moving_strip) -> None:
 		"""Calculate which row was moved and dynamically sync the virtual display page index."""
 
-		log(f"EffectController.__handle_row_display_switch() called.")
+		log(f"EffectComponent.__handle_row_display_switch() called.")
 
 		try:
 			# Find where this moving strip sits inside our array list of 16 targets
@@ -467,27 +358,44 @@ class EffectComponent(Component):
 	################################################################################################################
 
 
-	def __handle_page_up_down_ccs(self, cc_no: int, cc_value: int) -> None:
-		"""Handle physical banking buttons to toggle display rows before swapping MIDI maps."""
+	#def _handle_page_up_down_ccs(self, cc_no: int, cc_value: int) -> None:
+	#	"""Handle physical banking buttons to toggle display rows before swapping MIDI maps."""
+
+
+	################################################################################################################
+
+
+	# def _handle_select_button_ccs(self, cc_no: int, cc_value: int) -> None:
+	# 	pass
+
 	
-		# Only process the command when the user physically presses the button down
-		if cc_value != Constants.Hardware.BUTTON_PRESSED:
-			return None
+	################################################################################################################
 
-		if self._assigned_device is None:
-			return None
 
-		device_parameters = self._assigned_device.parameters[1:]
+	def _lock_to_device(self, device: Optional[Device]) -> None:
+		"""Natively handle the hardware feedback loop when locking."""
 
-		# Calculate the total number of 8-parameter display pages available
-		total_pages = len(device_parameters) + 7 // 8
+		log_info(f"EffectComponent._lock_to_device({Device}) called.")
 
-		# Make sure our tracking page variable exists in memory
-		if not hasattr(self, '_display_page_index'):
-			self._display_page_index = 0
+		if device:
+			# --- FIX: ASSIGN THE LOCAL FLAG STATUS NATIVELY HERE ---
+			self._assigned_device_is_locked = True
+			# --------------------------------------------------------
+			self._update_select_row_leds()
 
-		# --- CASE A: PAGE UP PRESSED ---
-		if cc_no == Constants.Effect.PAGE_UP:
+
+	################################################################################################################
+
+
+	def _on_btn_page_up_pressed(self, value):
+
+		if value and self._assigned_device is not None:
+			
+			device_parameters = self._assigned_device.parameters[1:]
+
+			# Calculate the total number of 8-parameter display pages available
+			total_pages = len(device_parameters) + 7 // 8
+
 			if self._display_page_index + 1 < total_pages:
 				self._display_page_index += 1
 				log(f"PAGE BUTTON: Pressed Up. Virtual Display Page is now -> {self._display_page_index}")
@@ -503,8 +411,14 @@ class EffectComponent(Component):
 					self._current_display_row = "encoders"
 					self.reassign_strips(force_rebuild=False) # TEXT SWAP ONLY, lightning fast
 
-		# --- CASE B: PAGE DOWN PRESSED ---
-		elif cc_no == Constants.Effect.PAGE_DOWN:
+
+	################################################################################################################
+	
+	
+	def _on_btn_page_down_pressed(self, value):
+
+		if value and self._assigned_device is not None:
+
 			if self._display_page_index > 0:
 				self._display_page_index -= 1
 				log(f"PAGE BUTTON: Pressed Down. Virtual Display Page is now -> {self._display_page_index}")
@@ -521,161 +435,373 @@ class EffectComponent(Component):
 					self.reassign_strips(force_rebuild=False) # TEXT SWAP ONLY, lightning fast
 
 
+		
+	################################################################################################################
+	
+
+	def _on_btn_sel_dpads_pressed(self, value) -> None:
+
+		if value:
+			self.song.stop_all_clips()
+
+
 
 	################################################################################################################
+	
+
+	def _on_btn_sel_encoders_pressed(self, value) -> None:
+
+		if value:
+			new_index = min(
+				len(self.song.scenes) - 1,
+				max(0, list(self.song.scenes).index(self.song.view.selected_scene) - 1),
+			)
+			self.song.view.selected_scene = self.song.scenes[new_index]
 
 
-	def __handle_select_button_ccs(self, cc_no: int, cc_value: int) -> None:
-		
-		log_info(f"__handle_select_button_ccs({cc_no}, {cc_value}) called.")
-		
-		if cc_no == Constants.Effect.SELECT_TOP_BUTTON_ROW:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
+	################################################################################################################
+	
+	
+	def _on_btn_sel_top_btns_pressed(self, value) -> None:
+
+		if value:
 											
-								# Debounce double-broadcast hardware port packets
-				current_time = time.time()
-				if hasattr(self, '_last_lock_press_time') and (current_time - self._last_lock_press_time) < 0.1:
-					log("DEBOUNCE BLOCK: Successfully dropped physical hardware double-broadcast packet.")
-					return None
-				self._last_lock_press_time = current_time
-				
-				# 1. READ the status BEFORE changing anything
-				was_already_locked = getattr(self, '_assigned_device_is_locked', False)
-				
-				log("LOCK BUTTON PRESSED: Handing toggle request to root script...")
-			
-				# 2. Fire the native toggle command in Live via the master script
-				self._control_surface.toggle_lock()
-				
-				# 3. Engage the 2-second visual hold timer (10 frame ticks)
-				self._lock_popup_ticks = 10
-				
-				# 4. Route state updates purely through your balanced helpers
-				if not was_already_locked:
-					log("LOCK ROUTE: Engaging lock_to_device...")
-					# This now sets the flag to True and updates select LEDs natively
-					
-					self.lock_to_device(self.song.appointed_device)
-					
-					self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
-
-				else:
-					log("LOCK ROUTE: Engaging unlock_from_device...")
-					current_device = self._assigned_device
-					
-					# 1. Turn off the hardware button LEDs natively
-					self.unlock_from_device(current_device)
-					
-					# 2. Hard reset variables cleanly on a manual unlock
-					self._assigned_device_is_locked = False 
-					self._display_page_index = 0
-					self._current_display_row = "pots"
-					
-					# 3. Pull whatever device Ableton is focusing on right now
-					live_appointed_device = self.song.appointed_device
-					
-					# --- FIX: UPDATE THE MEMORY POINTER DIRECTLY WITHOUT CORRUPTING CACHES ---
-					# Set the internal pointer to the new instrument
-					self._assigned_device = live_appointed_device
-					
-					# Run text reassignment with force_rebuild=False so it updates the text names 
-					# array behind the scenes without triggering a destructive C++ MIDI rebuild!
-					self.reassign_strips(force_rebuild=False)
-					# ------------------------------------------------------------------------
-					
-					# 4. Flash your centralized timed message popup for exactly 2 seconds
-					self._display_component.show_timed_message("Device Unlocked", duration_seconds=2.0)
-
+			# Debounce double-broadcast hardware port packets
+			current_time = time.time()
+			if hasattr(self, '_last_lock_press_time') and (current_time - self._last_lock_press_time) < 0.1:
+				log("DEBOUNCE BLOCK: Successfully dropped physical hardware double-broadcast packet.")
 				return None
-
-
-		if cc_no == Constants.Effect.SELECT_ENCODER:
+			self._last_lock_press_time = current_time
 			
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
+			# 1. READ the status BEFORE changing anything
+			was_already_locked = getattr(self, '_assigned_device_is_locked', False)
+			
+			log("LOCK BUTTON PRESSED: Handing toggle request to root script...")
+		
+			# 2. Fire the native toggle command in Live via the master script
+			self._control_surface.toggle_lock()
+			
+			# 3. Engage the 2-second visual hold timer (10 frame ticks)
+			self._lock_popup_ticks = 10
+			
+			# 4. Route state updates purely through your balanced helpers
+			if not was_already_locked:
+				log("LOCK ROUTE: Engaging lock_to_device...")
+				# This now sets the flag to True and updates select LEDs natively
 				
-				new_index = min(
-					len(self.song.scenes) - 1,
-					max(0, list(self.song.scenes).index(self.song.view.selected_scene) - 1),
-				)
-				self.song.view.selected_scene = self.song.scenes[new_index]
-			return None
+				self._lock_to_device(self.song.appointed_device)
+				
+				self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
 
-		if cc_no == Constants.Effect.SELECT_BOTTOM_BUTTON_ROW:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				new_index = min(
-					len(self.song.scenes) - 1,
-					max(0, list(self.song.scenes).index(self.song.view.selected_scene) + 1),
-				)
-				self.song.view.selected_scene = self.song.scenes[new_index]
-			return None
+			else:
+				log("LOCK ROUTE: Engaging unlock_from_device...")
+				current_device = self._assigned_device
+				
+				# 1. Turn off the hardware button LEDs natively
+				self._unlock_from_device(current_device)
+				
+				# 2. Hard reset variables cleanly on a manual unlock
+				self._assigned_device_is_locked = False 
+				self._display_page_index = 0
+				self._current_display_row = "pots"
+				
+				# 3. Pull whatever device Ableton is focusing on right now
+				live_appointed_device = self.song.appointed_device
+				
+				# --- FIX: UPDATE THE MEMORY POINTER DIRECTLY WITHOUT CORRUPTING CACHES ---
+				# Set the internal pointer to the new instrument
+				self._assigned_device = live_appointed_device
+				
+				# Run text reassignment with force_rebuild=False so it updates the text names 
+				# array behind the scenes without triggering a destructive C++ MIDI rebuild!
+				self.reassign_strips(force_rebuild=False)
+				# ------------------------------------------------------------------------
+				
+				# 4. Flash your centralized timed message popup for exactly 2 seconds
+				self._display_component.show_timed_message("Device Unlocked", duration_seconds=2.0)
 
-		if cc_no == Constants.Effect.POTS:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self.song.view.selected_scene.fire_as_selected()
-			return None
-
-		if cc_no == Constants.Effect.SELECT_DRUM_PAD:
-			if cc_value == Constants.Hardware.BUTTON_PRESSED:
-				self.song.stop_all_clips()
-			return None
 
 
 	################################################################################################################
-
-
-	def update_select_row_leds(self) -> None:
+	
+	
+	def _on_btn_sel_pots_pressed(self, value) -> None:
 		
-		if self._assigned_device_is_locked:
-			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_TOP_BUTTON_ROW, Constants.Hardware.BUTTON_PRESSED))
-		else:
-			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_BOTTOM_BUTTON_ROW, Constants.Hardware.BUTTON_RELEASED))
+		if value:
+			self.song.view.selected_scene.fire_as_selected()
+	
+
+
+	################################################################################################################
+	
+	
+	def _on_btn_sel_btm_btns_pressed(self, value) -> None:
+				
+		if value:
+			new_index = min(
+				len(self.song.scenes) - 1,
+				max(0, list(self.song.scenes).index(self.song.view.selected_scene) + 1),
+			)
+			self.song.view.selected_scene = self.song.scenes[new_index]
+
+
+	################################################################################################################
+	
+	
+	def _on_top_row_button_pressed(self, value, sender) -> None:
+		pass
+
+
+	################################################################################################################
+	
+	
+	def _on_btm_row_button_pressed(self, value, sender) -> None:
+		pass
 
 
 	################################################################################################################
 
 
-	def lock_to_device(self, device: Optional[Device]) -> None:
-		"""Natively handle the hardware feedback loop when locking."""
+	def _on_selected_track_changed(self) -> None:
+		"""Fires instantly whenever you select a different track channel lane in Live."""
 
-		if device:
-			# --- FIX: ASSIGN THE LOCAL FLAG STATUS NATIVELY HERE ---
-			self._assigned_device_is_locked = True
-			# --------------------------------------------------------
-			self.update_select_row_leds()
+		log_info(f"EffectComponent._on_selected_track_changed() called.")
 
-
-	################################################################################################################
-
-
-	def unlock_from_device(self, device: Optional[Device]) -> None:
-		"""Natively handle the hardware feedback loop when unlocking."""
-
-		if device and device == self._assigned_device:
+		try:
+			track: Track = self.song.view.selected_track
 			
-			self._assigned_device_is_locked = False
-			self.update_select_row_leds()
-			if self.song.appointed_device != self._assigned_device:
-				self.reassign_strips()
+			# --- ABSOLUTE EMPTY TRACK VALIDATION CHECK ---
+			# Look directly inside the track's physical device list array
+			if track is None or len(track.devices) == 0:
+				log("TRACK CHANGED LOGIC: Track has 0 physical devices. Forcing clear...")
+				self._change_assigned_device(None)
+				return None
+			# ---------------------------------------------
+
+			# If the track actually has devices, safely extract the highlighted target
+			current_device = track.view.selected_device
+			log(f"TRACK CHANGED LOGIC: Active device is now -> {str(current_device)}")
+			
+			self._change_assigned_device(current_device)
+			
+		except Exception as e:
+			log_error(f"TRACK CHANGED ERROR: {str(e)}")
 
 
 	################################################################################################################
 
 
-	def report_bank(self) -> None:
+	def reassign_strips(self, force_rebuild: bool = True) -> None:
 		
-		log_info("EffectController.__report_bank() called.")
+		log_info(f"EffectComponent.reassign_strips(force_rebuild={force_rebuild}) called.")
+		
+		page_up_value = Constants.Hardware.BUTTON_RELEASED
+		page_down_value = Constants.Hardware.BUTTON_RELEASED
+		device = self._assigned_device
+
+
+		if device is not None:
+			
+			log("Device valid...")
+			self._blank_prompt_is_drawn = False
+
+			param_index = 0
+			param_names = []
+			parameters = []
+
+			for strip in self._strips:
+				
+				param = None
+				name = ""
+				new_index = param_index + self._bank * 16
+
+				device_parameters = device.parameters[1:]
+
+				if new_index < len(device_parameters):
+					param = device_parameters[new_index]
+				
+				if param:
+					name = param.name
+
+				strip.assigned_parameter = param
+				parameters.append(param)
+				param_names.append(name)
+				param_index += 1
+
+			if self._bank > 0:
+				page_down_value = Constants.Hardware.BUTTON_PRESSED
+
+			if self._bank + 1 < self._get_num_parameter_banks():
+				page_up_value = Constants.Hardware.BUTTON_PRESSED
+
+			self._report_bank()
+
+			# --- FIX: DYNAMIC RE-SLICING BASED ON ACTIVE DISPLAY ROW ---
+			# Check if the tracking variable exists (or initialize it on the fly)
+			if not hasattr(self, '_current_display_row'):
+				self._current_display_row = "pots"
+
+			if self._current_display_row == "pots":
+				# Left Screen gets items 0-7 (Pots)
+				active_names = param_names[:8]
+				active_params = parameters[:8]
+			else:
+				# Left Screen gets items 8-15 (Encoders)
+				active_names = param_names[8:]
+				active_params = parameters[8:]
+
+
+			self._display_component.setup_left_display(active_names, active_params)
+
+
+		else:
+			# This is for if no device is selected.
+
+			for strip in self._strips:
+				strip.assigned_parameter = None
+
+			log("CLEARING SCREEN: Caching original single-string text prompt...")
+			
+			# Save a pure 1-item text string array inside the display controller variables
+			param_names = ["Please select a Device in Live to edit it..."]
+			parameters = [None for _ in range(8)]
+			
+			self._display_component.setup_left_display(param_names, parameters)
+
+
+		# Wrap this line so it only fires when explicitly requested
+		if force_rebuild:
+			self._control_surface.request_rebuild_midi_map() # <--- suspicious as rebuild_midi_map calls this some of the time.
+
+
+		# if self.support_mkII():
+		# 	log("*** ERROR *** I should not be seeing mkii code...")
+		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_DOWN, page_down_value))
+		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_UP, page_up_value))
+
+		# 	for cc_no in fx_upper_button_row_ccs:
+		# 		self.send_midi((self.cc_status_byte(), cc_no, CC_VAL_BUTTON_RELEASED))
+
+
+		log_info(f"<-----Returning from EffectComponent.__reassign_strips(force_rebuild={force_rebuild}).")
+
+
+	################################################################################################################
+
+
+	def receive_midi_cc(self, cc_no: int, cc_value: int) -> None:
+		"""Route incoming CC events to the correct effect-control handler."""
+
+		log_info(f"EffectComponent.receive_midi_cc({cc_no}, {cc_value}) called.")
+
+		# --- THE ABSOLUTE GHOST MOVEMENT KILL SWITCH ---
+		# If no device is currently assigned to the controller (empty track state), 
+		# completely discard all incoming knob and encoder turns at the gate!
+		# This stops broken channel strip memory references from manually tweaking your old plugins.
+		if self._assigned_device is None:
+			log("GHOST GUARD: Discarded knob movement because track is empty.")
+			return None
+		# -----------------------------------------------
+
+		# if cc_no in Constants.Effect.NAVIGATION:
+		# 	self._handle_page_up_down_ccs(cc_no, cc_value)
+		# 	return None
+		
+		# if cc_no in Constants.Effect.SELECT_BUTTONS:
+		# 	self._handle_select_button_ccs(cc_no, cc_value)
+		# 	return None
+		
+		# if cc_no in Constants.Effect.UPPER_BUTTONS:
+		# 	strip = self._strips[cc_no - Constants.Effect.UPPER_BUTTON_BASE]
+		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
+		# 		strip.on_button_pressed()
+		# 	return None
+		
+		# if cc_no in Constants.Effect.POTS:
+		# 	# Let Live take ownership of the pot row for device-parameter mapping.
+		# 	return None
+		
+		# if cc_no in Constants.Effect.ENCODERS:
+		# 	return None
+		
+		# if cc_no in Constants.Effect.LOWER_BUTTONS:
+		# 	return None
+
+
+	################################################################################################################
+
+
+	def receive_midi_note(self, note: int, velocity: int):
+		"""Handle note events from the drum-pad row for the effect section."""
+
+		log_info("EffectComponent.receive_midi_note() called.")
+		if note in Constants.Effect.DRUM_PADS:
+			return None
+
+		return None
+
+
+	################################################################################################################
+
+
+	#@override
+	def refresh_state(self) -> None:
+		
+		log_info("EffectComponent.refresh_state() called.")
+		
+		self._update_select_row_leds()
+		self.reassign_strips()
+
+		log_info("<-----Returning from EffectComponent.refresh_state() called.")
+
+
+	################################################################################################################
+
+
+	def _remove_button_listeners(self):
+	
+		self._btn_page_up.remove_value_listener(self._on_btn_page_up_pressed)     
+		self._btn_page_down.remove_value_listener(self._on_btn_page_down_pressed)
+		self._btn_sel_encoders.remove_value_listener(self._on_btn_sel_encoders_pressed)
+		self._btn_sel_top_btns.remove_value_listener(self._on_btn_sel_top_btns_pressed)
+		self._btn_sel_pots.remove_value_listener(self._on_btn_sel_pots_pressed)
+		self._btn_sel_btm_btns.remove_value_listener(self._on_btn_sel_btm_btns_pressed)
+		self._btn_sel_dpads.remove_value_listener(self._on_btn_sel_dpads_pressed)
+
+		[button.remove_value_listener(self._on_top_row_button_pressed) for button in self._buttons_upper_row]
+		[button.remove_value_listener(self._on_btm_row_button_pressed) for button in self._buttons_bottom_row]
+
+
+	################################################################################################################
+
+
+	def _report_bank(self) -> None:
+		
+		log_info("EffectComponent._report_bank() called.")
 		
 		if self._show_bank:
 			self._show_bank = False
-			self.show_bank_select("Bank" + str(self._bank + 1))
+			self._show_bank_select("Bank" + str(self._bank + 1))
 
 
 	################################################################################################################
 
 
-	def show_bank_select(self, bank_name: str) -> None:
+	def _restore_bank(self, bank: int) -> None:
 		
-		log_info(f"EffectController.__show_bank_select({bank_name}) called.")
+		log_info("EffectComponent.restore_bank() called.")
+
+		if self._assigned_device_is_locked:
+			self._bank = bank
+			self.reassign_strips()
+
+
+	###############################################################################################################
+
+
+	def _show_bank_select(self, bank_name: str) -> None:
+		
+		log_info(f"EffectComponent._show_bank_select({bank_name}) called.")
 
 		if self._assigned_device:
 			self._control_surface.show_message(
@@ -686,22 +812,10 @@ class EffectComponent(Component):
 	###############################################################################################################
 
 
-	def restore_bank(self, bank: int) -> None:
-		
-		log_info("EffectController.restore_bank() called.")
-
-		if self._assigned_device_is_locked:
-			self._bank = bank
-			self.reassign_strips()
-
-
-	###############################################################################################################
-
-
-	def set_appointed_device(self, device: Device) -> None:
+	def _set_appointed_device(self, device: Device) -> None:
 		"""Public receiver function called by RemoteSL.py."""
 
-		log_info(f"EffectController.set_appointed_device(): Received device pointer -> {str(device)}")
+		log_info(f"EffectComponent._set_appointed_device(): Received device pointer -> {str(device)}")
 
 		# This isn't called if the device is locked and you drop a new device on the locked channel.
 
@@ -710,30 +824,7 @@ class EffectComponent(Component):
 			log("LOCK ENGINE GUARD: Blocked appointed_device focus shift to maintain hardware lock.")
 			return None
 
-		self.change_assigned_device(device)
-
-
-	################################################################################################################
-
-
-	def change_assigned_device(self, device: Optional[Device]) -> None:
-		
-		"""Safely update active device references across track focus shifts."""
-		log(f"EffectController.__change_assigned_device({str(device)}) called.")
-		
-		# Set the master reference pointer to the device object handed down by Live
-		self._assigned_device = device
-		
-		# Reset view layout page markers ONLY if we are browsing tracks dynamically
-		if not getattr(self, '_assigned_device_is_locked', False):
-			self._bank = 0
-			self._display_page_index = 0
-			self._current_display_row = "pots"
-		
-		# Force a single rebuild of the layouts safely (force_rebuild=True maps MIDI)
-		self.reassign_strips(force_rebuild=True)
-
-		log_info("<-----Returning from EffectController.change_assigned_device().")
+		self._change_assigned_device(device)
 
 
 	################################################################################################################
@@ -741,26 +832,24 @@ class EffectComponent(Component):
 
 	# def __parameter_list_of_device_changed(self):
 		
-	# 	log("EffectController.__parameter_list_of_device_changed() called.")
+	# 	log("EffectComponent.__parameter_list_of_device_changed() called.")
 	# 	self.reassign_strips()
 
 
 	################################################################################################################
 
 
-	def _number_of_parameter_banks(self) -> int:
-		
-		log_info("EffectController.__number_of_parameter_banks() called.")
+	def _unlock_from_device(self, device: Optional[Device]) -> None:
+		"""Natively handle the hardware feedback loop when unlocking."""
 
-		result = 0
+		log_info(f"EffectComponent._unlock_from_device({device}) called.")
 
-		if self._assigned_device is not None:
-			param_count = len(self._assigned_device.parameters)
+		if device and device == self._assigned_device:
 			
-			# Use double-slash '//' for clean integer floor division
-			result = (param_count // 8) + int(param_count % 8 != 0)
-		
-		return result
+			self._assigned_device_is_locked = False
+			self._update_select_row_leds()
+			if self.song.appointed_device != self._assigned_device:
+				self.reassign_strips()
 
 
 	################################################################################################################
@@ -770,7 +859,7 @@ class EffectComponent(Component):
 	def update(self) -> None:
 		"""Fires continuously on Ableton's background frame clock to monitor device state."""
 
-		log_info("EffectComponent.update() called.")
+		#log_info("EffectComponent.update() called.")
 		
 		# --- FIX: THE ABSOLUTE UPDATE DISPLAY LOCK ENVELOPE ---
 		# If the controller is locked, we completely freeze the parameter tracking view!
@@ -785,10 +874,10 @@ class EffectComponent(Component):
 				
 				log("LOCK BREAK: Locked device was physically deleted! Releasing control maps...")
 				self._assigned_device_is_locked = False
-				self.unlock_from_device(self._assigned_device)
+				self._unlock_from_device(self._assigned_device)
 				self._assigned_device = self._control_surface.song.appointed_device
 				if self._assigned_device is not None:
-					self.change_assigned_device(self._assigned_device)
+					self._change_assigned_device(self._assigned_device)
 				
 			# If the device is alive and locked, EXIT IMMEDIATELY.
 			# This blocks the empty track lane check below from ever executing!
@@ -855,18 +944,18 @@ class EffectComponent(Component):
 	################################################################################################################
 
 
+	def _update_select_row_leds(self) -> None:
+		
+		if self._assigned_device_is_locked:
+			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_TOP_BUTTON_ROW, Constants.Hardware.BUTTON_PRESSED))
+		else:
+			self.send_midi((self.cc_status_byte(), Constants.Effect.SELECT_BOTTOM_BUTTON_ROW, Constants.Hardware.BUTTON_RELEASED))
 
 
 	################################################################################################################
 
 
-
-
-
-
 ####################################################################################################################
-####################################################################################################################
-
 
 
 
@@ -877,16 +966,18 @@ class EffectChannelStrip(object):
 	################################################################################################################
 
 	def __init__(self, mixer_component):
-		
+
+		set_log_component("EffectChannelStrip")
+
 		self._mixer_component : EffectComponent = mixer_component
-		self._assigned_parameter: Live.DeviceParameter.DeviceParameter | None = None
-		self._last_value : float = 0.0
+		self._assigned_parameter: Optional[DeviceParameter] = None
+		self._last_value : Optional[float] = None
 
 	################################################################################################################
 
 
 	@property
-	def last_value(self) -> float:
+	def last_value(self) -> Optional[float]:
 		return self._last_value
 	
 	@last_value.setter
@@ -898,12 +989,12 @@ class EffectChannelStrip(object):
 
 
 	@property
-	def assigned_parameter(self) -> DeviceParameter | None:
+	def assigned_parameter(self) -> Optional[DeviceParameter]:
 		"""Getter: Safely returns the currently bound device parameter or None."""
 		return self._assigned_parameter
 	
 	@assigned_parameter.setter
-	def assigned_parameter(self, parameter: Live.DeviceParameter.DeviceParameter | None):
+	def assigned_parameter(self, parameter: Optional[DeviceParameter]):
 		"""Setter: Safely updates the internal parameter reference reference."""
 		self._assigned_parameter = parameter
 
@@ -925,7 +1016,7 @@ class EffectChannelStrip(object):
 	################################################################################################################
 
 
-	def on_button_pressed(self):
+	def on_button_pressed(self) -> None:
 		
 		log("EffectChannelStrip.on_button_pressed() called.")
 
@@ -948,7 +1039,7 @@ class EffectChannelStrip(object):
 
 
 
-	def on_encoder_moved(self, cc_value : int):
+	def on_encoder_moved(self, cc_value : int) -> None:
 		
 		log(f"EffectChannelStrip.on_encoder_moved({cc_value}) called.")
 		

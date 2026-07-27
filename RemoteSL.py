@@ -54,19 +54,6 @@ class RemoteSL(ControlSurface):
 
 		with self.component_guard():
 			
-			#self.hardware_controls = {} #dictionary to hold controls.
-		
-			log("\t|----->Setting up free buttons...")
-
-			self._fx_buttons = [ButtonElement(True, MIDI_CC_TYPE, Constants.Hardware.MIDI_CHANNEL, cc) for cc in Constants.Effect.NAVIGATION + Constants.Effect.SELECT_BUTTONS + Constants.Effect.UPPER_BUTTONS]
-
-			log("\t|----->Done setting up free buttons.")
-
-			log("\t|----->Adding listeners...")
-			for button in list(self._fx_buttons):# + self._mx_buttons):
-				button.add_value_listener(self.on_button_pressed_cb, identify_sender=True)
-			log("\t|----->Done adding listeners.")
-
 			log("\t|----->Building DisplayComponent...")
 			self._display_component = DisplayComponent(self)
 
@@ -85,7 +72,7 @@ class RemoteSL(ControlSurface):
 		
 		
 		for component in self.components:
-			component.setEnabled(True)
+			component.set_enabled(True)
 			#self._register_component
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
@@ -245,8 +232,8 @@ class RemoteSL(ControlSurface):
 
 		self._device_appointer.disconnect()
 
-		for button in list(self._fx_buttons): # + self._mx_buttons): # + self._ts_buttons
-			button.remove_value_listener(self.on_button_pressed_cb)
+		# for button in list(self._fx_buttons): # + self._mx_buttons): # + self._ts_buttons
+		# 	button.remove_value_listener(self.on_button_pressed_cb)
 
 		super(RemoteSL, self).disconnect()
 
@@ -300,7 +287,7 @@ class RemoteSL(ControlSurface):
 
 		"""Lock the effect controller to the given device."""
 		super(RemoteSL, self).lock_to_device(device)
-		self._effect_component.lock_to_device(device)
+		self._effect_component._lock_to_device(device)
 
 
 	################################################################################################################
@@ -475,7 +462,7 @@ class RemoteSL(ControlSurface):
 		
 		# Ensure this points directly to your active effect controller instance
 		if self._effect_component is not None:
-			self._effect_component.set_appointed_device(device)
+			self._effect_component._set_appointed_device(device)
 		else:
 			log("***ERROR***: RemoteSL._effect_controller is None.")
 
@@ -562,7 +549,7 @@ class RemoteSL(ControlSurface):
 
 		log(f"RemoteSL.unlock_from_device({device}) called.")
 
-		self._effect_component.unlock_from_device(device)
+		self._effect_component._unlock_from_device(device)
 
 
 	################################################################################################################
