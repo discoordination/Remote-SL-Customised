@@ -1,12 +1,8 @@
-import os
-from datetime import datetime
-import inspect
-
-
-from .consts import Constants
-
-
 # myLogger.py
+
+from ableton.v2.control_surface import ControlElement
+from ableton.v2.control_surface.elements import ButtonElement
+
 import os
 from datetime import datetime
 import inspect
@@ -23,8 +19,9 @@ LOG_LEVEL = "DEBUG"  # DEBUG, INFO, WARNING, ERROR
 LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
 LOG_LEVEL = "DEBUG"           # DEBUG, INFO, WARNING, ERROR
 LOG_ENABLED = True
-LOG_MIDI = True               # ← Toggle MIDI message logging
-LOG_ASSIGNMENTS = True        # ← Toggle control assignment logging
+LOG_MIDI = False               # ← Toggle MIDI message logging
+LOG_LISTENERS = True
+LOG_ASSIGNMENTS = False        # ← Toggle control assignment logging
 
 
 # --- Log Levels ---
@@ -79,9 +76,15 @@ class Logger:
 
 
 
-	def set_component(self, name: str):
-		"""Set the current component name for context."""
-		self._component = name
+	def _get_component_name(self, frame):
+		"""Extract the class name from the calling frame."""
+		# Look for 'self' in the frame's local variables
+		if 'self' in frame.f_locals:
+			obj = frame.f_locals['self']
+			# Get the class name
+			return obj.__class__.__name__
+		# Fallback: try to get the function name
+		return frame.f_code.co_name or "Unknown"
 
 
 
@@ -101,22 +104,26 @@ class Logger:
 				break
 			current_frame = current_frame.f_back
     
-
 		if current_frame:
 			filename = os.path.basename(current_frame.f_code.co_filename)
 			func = current_frame.f_code.co_name
 			line = current_frame.f_lineno
+
+			if component is None:
+				component = self._get_component_name(current_frame)
+
 		else:
 			filename = func = line = "?"
 			line = 0
+			component = component or "Unknown"
 	
 		timestamp = datetime.now().isoformat(timespec='milliseconds')
-		comp = component or self._component or "Unknown"
+		#comp = component or self._component or "Unknown"
 		level_name = level.name
 			
 		try:
 			with open(self._log_file, 'a') as f:
-				f.write(f"[{timestamp}] [{level_name}] {comp}.{func}():{line} - {message}\n")
+				f.write(f"[{timestamp}] [{level_name}] {component}.{func}():{line} - {message}\n")
 		except Exception:
 			pass
 
@@ -135,7 +142,20 @@ class Logger:
 		"""Log control assignments."""
 		if not LOG_ASSIGNMENTS:
 			return
-		self.log(f"ASSIGN: Strip {strip_index} → CC {cc_no} → {param_name}", LogLevel.DEBUG, component)
+		self.log(f"ASSIGN: Strip {strip_index} with CC{cc_no} to {param_name}", LogLevel.DEBUG, component)
+
+
+
+	def log_listener_callback(self, value: Optional[int] = None, sender: Optional[ControlElement] = None, component: Optional[str] = None):
+		"""Log control assignments."""
+		if not LOG_LISTENERS:
+			return
+		string = "EVENT LISTENER FIRED"
+		if value:
+			string += f": value: {value}"
+		if sender:
+			string += f" sender: {sender}"
+		self.log(string, LogLevel.DEBUG, component)
 
 
 # --- Convenience Functions ---
@@ -151,12 +171,8 @@ def log(message: str, component: Optional[str] = None):
 
 
 
-
-
 def log_info(message: str, component: Optional[str] = None):
 	_logger.log(message, LogLevel.INFO, component)
-
-
 
 
 
@@ -165,11 +181,8 @@ def log_warning(message: str, component: Optional[str] = None):
 
 
 
-
-
 def log_error(message: str, component: Optional[str] = None):
 	_logger.log(message, LogLevel.ERROR, component)
-
 
 
 
@@ -178,14 +191,14 @@ def log_midi(direction: str, midi_bytes: tuple, component: Optional[str] = None)
 
 
 
-
 def log_assignment(strip_index: int, cc_no: int, param_name: str, component: Optional[str] = None):
     _logger.log_assignment(strip_index, cc_no, param_name, component)
 
 
 
-def set_log_component(name: str):
-	_logger.set_component(name)
+def log_listener_callback(value: Optional[int] = None, sender: Optional[ControlElement] = None, component: Optional[str] = None):
+	_logger.log_listener_callback(value, sender, component)
+
 
 
 

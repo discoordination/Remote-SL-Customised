@@ -31,6 +31,7 @@ from .Components.MixerComponent import MixerComponent
 
 from .myLogger import *
 
+from .tracker import CALL_COUNTS, ALL_METHODS
 
 ####################################################################################################################
 
@@ -45,8 +46,7 @@ class RemoteSL(ControlSurface):
 	def __init__(self, c_instance):
 		"""Initialise the Remote SL controller and its child components."""
 
-		set_log_component("RemoteSL")
-		log("RemoteSL.__init__() called.")
+		log_info("RemoteSL.__init__() called.")
 
 		super(RemoteSL, self).__init__(c_instance)
 
@@ -76,7 +76,7 @@ class RemoteSL(ControlSurface):
 			#self._register_component
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
-		# self._update_hardware_delay = -1 # removed as why drop a tick here? to save 1 tick???
+		self._update_hardware_delay = -1 # -1 is an initalizer???
 
 		self._device_appointer = DeviceAppointer(
 			song=(self.song),
@@ -87,12 +87,12 @@ class RemoteSL(ControlSurface):
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
 
 		# Do some quick checks.
-
 		if self._enabled == False:
+			log_error("Error: RemoteSL must be enabled.")
 			raise ValueError(f"Error: Object {self} is not enabled when it should be.")
 
 		if len(self.components) != 4:
-			log(f"Error: num components is {len(self._components)} when it should be 4.")
+			log_error(f"Error: num components is {len(self._components)} when it should be 4.")
 			raise ValueError(f"Error: num components is {len(self._components)} when it should be 4.")
 
 		for comp in self.components:
@@ -104,7 +104,7 @@ class RemoteSL(ControlSurface):
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
 		#self.set_enabled(True)
 
-		log("<-----Returning from RemoteSL.__init__().")
+		log_info("<-----Returning from RemoteSL.__init__().")
 
 
 	def _tempo_changed(self):
@@ -232,13 +232,34 @@ class RemoteSL(ControlSurface):
 
 		self._device_appointer.disconnect()
 
+		for component in self.components:
+			component.set_enabled(False)
+
 		# for button in list(self._fx_buttons): # + self._mx_buttons): # + self._ts_buttons
 		# 	button.remove_value_listener(self.on_button_pressed_cb)
 
-		super(RemoteSL, self).disconnect()
-
 		self.send_midi(MIDI.ALL_LEDS_OFF)
+		super(RemoteSL, self).disconnect()
 		self.send_midi(Constants.SysEx.GOODBYE) # After super so it's done after clear screen.
+
+		# Find uncalled methods
+		called = set(CALL_COUNTS.keys())
+		uncalled = ALL_METHODS - called
+		if uncalled:
+			log("=== Uncalled Methods ===")
+			for method in sorted(uncalled):
+				log(f"  {method}")
+			log("=========================")
+		else:
+			log("All tracked methods were called at least once.")
+
+		# Optionally, also log call counts for all methods:
+		log("=== Call Counts ===")
+		for method, count in sorted(CALL_COUNTS.items(), key=lambda x: x[1], reverse=True):
+			log(f"  {method}: {count}")
+		log("===================")
+
+
 
 
 	################################################################################################################
@@ -457,16 +478,17 @@ class RemoteSL(ControlSurface):
 	def set_appointed_device(self, device):
 		"""Native callback fired by DeviceAppointer when track focus shifts."""
 
-		log(f"RemoteSL.set_appointed_device({device}) called.")
+		log_info(f"RemoteSL.set_appointed_device({device}) called.")
+		log_listener_callback(None, device)
 		log(f"\t|----->REMOTE SL APPCON: DeviceAppointer passed device -> {str(device)}")
 		
 		# Ensure this points directly to your active effect controller instance
-		if self._effect_component is not None:
-			self._effect_component._set_appointed_device(device)
-		else:
-			log("***ERROR***: RemoteSL._effect_controller is None.")
+		#if self._effect_component is not None:
+		# self._effect_component._set_appointed_device(device)
+		#else:
+		#	log("***ERROR***: RemoteSL._effect_controller is None.")
 
-		log(f"<-----Returning from set_appointed_device({device})")
+		log_info(f"<-----Returning from set_appointed_device({device})")
 
 
 

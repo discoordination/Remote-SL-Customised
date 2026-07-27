@@ -34,8 +34,7 @@ from .myLogger import *
 def create_instance(c_instance):
 	"""Create and return the Remote SL controller instance."""
 
-	set_log_component("__init__")
-	log("*-> Creating instance...")
+	log_info("*-> Creating instance...")
 	instance = RemoteSL(c_instance)
 	instance.show_message("RemoteSL_Customised created...")
 
@@ -46,7 +45,7 @@ def create_instance(c_instance):
 def get_capabilities():
 	"""Return the modern controller ports and identification information for Live 12."""
 	
-	log("*-> Getting capabilities...")
+	log_info("*-> Getting capabilities...")
 	
 	# Use the clean, standardized string constants expected by Live 12
 	return {

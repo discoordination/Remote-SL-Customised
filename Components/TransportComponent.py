@@ -9,7 +9,7 @@ from ableton.v2.control_surface.elements import ButtonElement
 from Live.Song import Song
 
 from ..consts import H, T, M
-from ..myLogger import log
+from ..myLogger import log, log_info
 
 import time
 from typing import Final
@@ -43,7 +43,7 @@ class TransportComponent(Component):
 
 	def __init__(self, control_surface, name='TransportComponent', *a, **k):
 
-		log(f"TransportComponent.__init__({control_surface},{name}) called.")
+		log_info(f"TransportComponent.__init__({control_surface},{name}) called.")
 
 		super().__init__(name=name, song=control_surface.song, *a, **k)
 
@@ -65,7 +65,7 @@ class TransportComponent(Component):
 		self._add_button_listeners()
 		self.song.add_record_mode_listener(self._on_record_mode_changed)
 
-		log(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
+		log_info(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
 
 
 	################################################################################################################

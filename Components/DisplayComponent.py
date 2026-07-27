@@ -24,7 +24,7 @@ else:
 		return func
 
 from ..consts import Constants, H, SYX
-from ..myLogger import log, log_info, set_log_component
+from ..myLogger import log, log_info, log_midi
 
 
 
@@ -88,7 +88,6 @@ class DisplayComponent(Component):
 
 	def __init__(self, control_surface, name='DisplayComponent', *a, **k):
 
-		set_log_component("DisplayComponent")
 		log_info(f"DisplayComponent.__init__({control_surface},{name}) called.")
 
 		super().__init__(name=name, *a, **k)
@@ -235,7 +234,7 @@ class DisplayComponent(Component):
 
 		if self._displayed_rows_cache[row] != full_syx_msg:
 
-			log(f"\t|----->Str to display: {' '.join(f'{x:02X}' for x in full_syx_msg)}")
+			log_midi(f"\t|----->Str to display: ", full_syx_msg)
 			self._displayed_rows_cache[row] = full_syx_msg
 			self.control_surface.send_midi(full_syx_msg)
 
@@ -272,7 +271,7 @@ class DisplayComponent(Component):
 	def show_timed_message(self, message_text: str, duration_seconds: float = 3.0, centred:bool = False, *rows: ROW):
 		"""Public endpoint to cleanly show a fluid, full-row message on a strict hardware hold timer."""
 
-		log(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
+		log_info(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
 		
 		# Convert seconds to clock frames (update_display runs roughly 5 times a second)
 		self._message_popup_ticks = int(duration_seconds * 5)

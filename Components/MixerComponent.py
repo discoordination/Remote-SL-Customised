@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 from .DisplayComponent import DisplayComponent, ROW
 from ..consts import SLM, MXR, Constants, H, M
-from ..myLogger import log, log_assignment, log_error, log_warning, log_info, set_log_component
+from ..myLogger import log, log_assignment, log_error, log_warning, log_info
 
 
 ####################################################################################################################
@@ -70,11 +70,10 @@ class MixerComponent(Component):
 
 	def __init__(self, control_surface: RemoteSL, name: str = 'MixerComponent', *a, **k):
 		"""Initialise the mixer controller state and display references."""
+
+		log_info(f"MixerComponent.__init__({control_surface}, {name}) called.")
 		
 		super().__init__(name=name, song=control_surface.song, *a, **k)
-
-		set_log_component("MixerComponent")
-		log_info(f"MixerComponent.__init__({control_surface}, {name}) called.")
 
 		self._control_surface: RemoteSL = control_surface
 		self._display_component: DisplayComponent = control_surface._display_component
@@ -485,8 +484,8 @@ class MixerComponent(Component):
 		self._btn_sel_tbs.remove_value_listener(self._on_btn_sel_tbs_pressed)
 		self._btn_sel_bbs.remove_value_listener(self._on_btn_sel_bbs_pressed)
 
-		[btn.remove_value_listener(self._on_btn_in_top_row_pressed, identify_sender=True) for btn in self._btns_top_row]
-		[btn.remove_value_listener(self._on_btn_in_btm_row_pressed, identify_sender=True) for btn in self._btns_btm_row]
+		[btn.remove_value_listener(self._on_btn_in_top_row_pressed) for btn in self._btns_top_row]
+		[btn.remove_value_listener(self._on_btn_in_btm_row_pressed) for btn in self._btns_btm_row]
 		
 
 	################################################################################################################
