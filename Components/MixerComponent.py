@@ -195,7 +195,7 @@ class MixerComponent(Component):
 				MidiMap.map_midi_cc(midi_map_handle, parameter, Constants.Hardware.MIDI_CHANNEL, cc_no, map_mode, False) # from Live.Midimap
 				continue
 			
-			MidiMap.forward_midi_cc(self.control_surface.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
+			#MidiMap.forward_midi_cc(self.control_surface.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
 
 		log_info(f"<-----Returning from MixerController.build_midi_map({midi_map_handle}).")
 
