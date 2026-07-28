@@ -190,7 +190,7 @@ class MixerComponent(Component):
 				map_mode = MidiMap.MapMode.absolute # They are sliders not encoders.
 				parameter = strip.slider_parameter()
 
-				log_assignment(strip_index, cc_no, str(parameter) if parameter is not None else "", "MixerComponent")
+				log_assignment(strip_index, cc_no, str(parameter) if parameter is not None else "")
 
 				MidiMap.map_midi_cc(midi_map_handle, parameter, Constants.Hardware.MIDI_CHANNEL, cc_no, map_mode, False) # from Live.Midimap
 				continue

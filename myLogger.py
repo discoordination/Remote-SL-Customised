@@ -1,45 +1,63 @@
-# myLogger.py
+####################################################################################################################
+#
+####################################################################################################################
+
 
 from ableton.v2.control_surface import ControlElement
-from ableton.v2.control_surface.elements import ButtonElement
-
 import os
 from datetime import datetime
 import inspect
-from enum import Enum
+from enum import Enum, auto
 from typing import Optional
 
-from .consts import Constants  # if LOGGING_ENABLED is in consts
+
+####################################################################################################################
+
 
 # --- Configuration ---
 LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
-LOG_LEVEL = "DEBUG"  # DEBUG, INFO, WARNING, ERROR
+LOG_LEVEL = "INFO"  # DEBUG, VERBOSE, INFO, WARNING, ERROR
 
-# --- Configuration ---
-LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
-LOG_LEVEL = "DEBUG"           # DEBUG, INFO, WARNING, ERROR
 LOG_ENABLED = True
-LOG_MIDI = False               # ← Toggle MIDI message logging
-LOG_LISTENERS = True
-LOG_ASSIGNMENTS = False        # ← Toggle control assignment logging
+LOG_MIDI = True               # ← Toggle MIDI category
+LOG_LISTENERS = True          # ← Toggle listener callback category
+LOG_ASSIGNMENTS = False       # ← Toggle assignment category
+
+# --- Per‑file logging control ---
+LOG_FILES = []  # Empty = all files; add filenames to filter
+
+
+####################################################################################################################
 
 
 # --- Log Levels ---
 class LogLevel(Enum):
 	DEBUG = 0
-	INFO = 1
-	WARNING = 2
-	ERROR = 3
+	VERBOSE = 1
+	INFO = 2
+	WARNING = 3
+	ERROR = 4
 
-_level_map = {
-	"DEBUG": LogLevel.DEBUG,
-	"INFO": LogLevel.INFO,
-	"WARNING": LogLevel.WARNING,
-	"ERROR": LogLevel.ERROR,
+_current_level = getattr(LogLevel, LOG_LEVEL, LogLevel.INFO)
+
+
+####################################################################################################################
+
+
+# --- Log Categories ---
+class LogCategory(Enum):
+	MIDI = auto()
+	LISTENER = auto()
+	ASSIGNMENT = auto()
+
+_category_toggles = {
+	LogCategory.MIDI: LOG_MIDI,
+	LogCategory.LISTENER: LOG_LISTENERS,
+	LogCategory.ASSIGNMENT: LOG_ASSIGNMENTS,
 }
 
 
-_current_level = getattr(LogLevel, LOG_LEVEL, LogLevel.DEBUG)
+####################################################################################################################
 
 
 # --- Core Logger ---
@@ -47,7 +65,9 @@ class Logger:
 	_instance = None
 
 
+	################################################################################################################
 	
+
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = super().__new__(cls)
@@ -55,19 +75,21 @@ class Logger:
 		return cls._instance
 
 
-	
+	################################################################################################################
+
+
 	def __init__(self):
 		if self._initialized:
 			return
 		self._initialized = True
-		self._component = None
 		self._log_file = LOG_FILE_PATH
 		self.clear()
 
 
+	################################################################################################################
+
 
 	def clear(self):
-		"""Clear the log file on session start."""
 		try:
 			with open(self._log_file, 'w') as f:
 				f.write(f"=== Remote SL Session {datetime.now().isoformat()} ===\n")
@@ -75,133 +97,178 @@ class Logger:
 			pass
 
 
+	################################################################################################################
+
 
 	def _get_component_name(self, frame):
-		"""Extract the class name from the calling frame."""
-		# Look for 'self' in the frame's local variables
 		if 'self' in frame.f_locals:
-			obj = frame.f_locals['self']
-			# Get the class name
-			return obj.__class__.__name__
-		# Fallback: try to get the function name
+			return frame.f_locals['self'].__class__.__name__
 		return frame.f_code.co_name or "Unknown"
 
 
+	################################################################################################################
+	
 
-	def log(self, message: str, level: LogLevel = LogLevel.DEBUG, component: Optional[str] = None):
-		"""Write a log message with level and context."""
+	def _should_log_file(self, filename: str) -> bool:
+		if not LOG_FILES:
+			return True
+		return os.path.basename(filename) in LOG_FILES
 
-		if not LOG_ENABLED or level.value < _current_level.value:
+
+	################################################################################################################
+
+
+	def log(self, message: str, level: LogLevel = LogLevel.DEBUG, category: Optional[LogCategory] = None):
+
+		if not LOG_ENABLED:
 			return
 
-		current_frame = inspect.currentframe()
-		
-		# Get caller info – go back TWO frames (skip the log() wrapper)
+		# Category toggle overrides LOG_LEVEL
+		if category is not None:
+			if not _category_toggles.get(category, False):
+				return
+		else:
+			# General logs are filtered by LOG_LEVEL
+			if level.value < _current_level.value:
+				return
 
+		# Find the caller frame (skip this module)
+		current_frame = inspect.currentframe()
 		while current_frame:
 			filename = current_frame.f_code.co_filename
 			if "myLogger.py" not in filename:
 				break
 			current_frame = current_frame.f_back
-    
+
 		if current_frame:
 			filename = os.path.basename(current_frame.f_code.co_filename)
+			if not self._should_log_file(filename):
+				return
 			func = current_frame.f_code.co_name
 			line = current_frame.f_lineno
-
-			if component is None:
-				component = self._get_component_name(current_frame)
-
+			component = self._get_component_name(current_frame)
 		else:
 			filename = func = line = "?"
-			line = 0
-			component = component or "Unknown"
-	
+			component = "Unknown"
+
 		timestamp = datetime.now().isoformat(timespec='milliseconds')
-		#comp = component or self._component or "Unknown"
 		level_name = level.name
-			
+		category_str = f" [{category.name}]" if category else ""
+
 		try:
 			with open(self._log_file, 'a') as f:
-				f.write(f"[{timestamp}] [{level_name}] {component}.{func}():{line} - {message}\n")
+				f.write(
+					f"[{timestamp}] [{level_name}]{category_str} "
+					f"{component}.{func}():{line} - {message}\n"
+				)
 		except Exception:
 			pass
 
 
-
-	def log_midi(self, direction: str, midi_bytes: tuple, component: Optional[str] = None):
-		"""Log MIDI messages with direction (IN/OUT)."""
-		if not LOG_MIDI:
-			return
-		hex_str = ' '.join(f'{b:02X}' for b in midi_bytes)
-		self.log(f"MIDI {direction}: {hex_str}", LogLevel.DEBUG, component)
+	################################################################################################################
 
 
-
-	def log_assignment(self, strip_index: int, cc_no: int, param_name: str, component: Optional[str] = None):
-		"""Log control assignments."""
-		if not LOG_ASSIGNMENTS:
-			return
-		self.log(f"ASSIGN: Strip {strip_index} with CC{cc_no} to {param_name}", LogLevel.DEBUG, component)
-
-
-
-	def log_listener_callback(self, value: Optional[int] = None, sender: Optional[ControlElement] = None, component: Optional[str] = None):
-		"""Log control assignments."""
-		if not LOG_LISTENERS:
-			return
-		string = "EVENT LISTENER FIRED"
-		if value:
-			string += f": value: {value}"
-		if sender:
-			string += f" sender: {sender}"
-		self.log(string, LogLevel.DEBUG, component)
-
-
-# --- Convenience Functions ---
+# --- Singleton ---
 _logger = Logger()
 
 
+####################################################################################################################
+
+# =============================================================================
+# Public API
+# =============================================================================
+
+# --- Core logging function ---
 
 
-
-def log(message: str, component: Optional[str] = None):
-	"""Log at DEBUG level (default)."""
-	_logger.log(message, LogLevel.DEBUG, component)
+####################################################################################################################
 
 
-
-def log_info(message: str, component: Optional[str] = None):
-	_logger.log(message, LogLevel.INFO, component)
-
-
-
-def log_warning(message: str, component: Optional[str] = None):
-	_logger.log(message, LogLevel.WARNING, component)
-
+def log(
+	message: str,
+	level: LogLevel = LogLevel.DEBUG,
+	category: Optional[LogCategory] = None
+):
+	"""Log a message with optional level and category."""
+	_logger.log(message, level, category)
 
 
-def log_error(message: str, component: Optional[str] = None):
-	_logger.log(message, LogLevel.ERROR, component)
+####################################################################################################################
 
 
+# --- Convenience functions (shortcuts for common levels) ---
 
-def log_midi(direction: str, midi_bytes: tuple, component: Optional[str] = None):
-    _logger.log_midi(direction, midi_bytes, component)
-
-
-
-def log_assignment(strip_index: int, cc_no: int, param_name: str, component: Optional[str] = None):
-    _logger.log_assignment(strip_index, cc_no, param_name, component)
+def log_debug(message: str, category: Optional[LogCategory] = None):
+	log(message, LogLevel.DEBUG, category)
 
 
-
-def log_listener_callback(value: Optional[int] = None, sender: Optional[ControlElement] = None, component: Optional[str] = None):
-	_logger.log_listener_callback(value, sender, component)
+####################################################################################################################
 
 
+def log_verbose(message: str, category: Optional[LogCategory] = None):
+	log(message, LogLevel.VERBOSE, category)
 
 
+####################################################################################################################
+
+
+def log_info(message: str, category: Optional[LogCategory] = None):
+	log(message, LogLevel.INFO, category)
+
+
+####################################################################################################################
+
+
+def log_warning(message: str, category: Optional[LogCategory] = None):
+	log(message, LogLevel.WARNING, category)
+
+
+####################################################################################################################
+
+
+def log_error(message: str, category: Optional[LogCategory] = None):
+	log(message, LogLevel.ERROR, category)
+
+
+####################################################################################################################
+
+# --- Category-specific convenience functions ---
+# These default to VERBOSE level and pre‑set the category
+
+def log_midi(direction: str, midi_bytes: tuple, level: LogLevel = LogLevel.VERBOSE):
+	hex_str = ' '.join(f'{b:02X}' for b in midi_bytes)
+	log(f"MIDI {direction}: {hex_str}", level, LogCategory.MIDI)
+
+
+####################################################################################################################
+
+
+def log_listener_callback(
+	value: Optional[int] = None,
+	sender: Optional[ControlElement] = None,
+	level: LogLevel = LogLevel.VERBOSE
+):
+	string = "EVENT LISTENER FIRED"
+	if value is not None:
+		string += f": value {value}"
+	if sender:
+		string += f" sender {sender}"
+	log(string, level, LogCategory.LISTENER)
+
+
+####################################################################################################################
+
+
+def log_assignment(
+	strip_index: int,
+	cc_no: int,
+	param_name: str,
+	level: LogLevel = LogLevel.VERBOSE
+):
+	log(f"ASSIGN: Strip {strip_index} CC{cc_no} → {param_name}", level, LogCategory.ASSIGNMENT)
+
+
+####################################################################################################################
 
 
 
@@ -214,8 +281,7 @@ def dump_attributes(object, fp):
 	fp.write("\n")
 
 
-
-
+####################################################################################################################
 
 
 def dump_methods(object, fp):
@@ -226,8 +292,7 @@ def dump_methods(object, fp):
 	fp.write("\n")
 
 
-
-
+####################################################################################################################
 
 
 def dump_object_info(object, filepath=None):
@@ -241,8 +306,7 @@ def dump_object_info(object, filepath=None):
 		log_error(f"Failed to dump object info for {type(object).__name__}")
 
 
-
-
+####################################################################################################################
 
 
 def generate_stub(target_class, output_filename="output.pyi"):
@@ -274,7 +338,8 @@ def generate_stub(target_class, output_filename="output.pyi"):
 	return file_path
 
 
-
+####################################################################################################################
+####################################################################################################################
 
 
 # # Set a completely independent, hardcoded file destination path
@@ -409,3 +474,7 @@ def generate_stub(target_class, output_filename="output.pyi"):
 # 	clear_log()
 # except Exception:
 # 	pass
+
+
+####################################################################################################################
+####################################################################################################################

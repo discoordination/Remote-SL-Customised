@@ -487,7 +487,7 @@ class RemoteSL(ControlSurface):
 	def send_midi(self, midi_event_bytes : tuple[int, ...]):
 		"""Send MIDI bytes."""
 
-		log_midi("OUT", midi_event_bytes, "RemoteSL")
+		log_midi("OUT", midi_event_bytes)
 
 		# check for bad midi bytes.
 		bad = False
@@ -501,7 +501,7 @@ class RemoteSL(ControlSurface):
 				bad = True
 
 		if bad:
-			log_error(f"Error: bad MIDI message sent: {midi_event_bytes}", "RemoteSL")
+			log_error(f"Error: bad MIDI message sent: {midi_event_bytes}")
 		
 		self._send_midi(midi_event_bytes)
 

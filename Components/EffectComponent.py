@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 from ..consts import Constants, H, FX, M
-from ..myLogger import log, log_info, log_warning, log_error, log_assignment, log_listener_callback
+from ..myLogger import log, log_info, log_warning, log_error, log_assignment, log_listener_callback, log_verbose
 from .DisplayComponent import DisplayComponent
 
 
@@ -161,7 +161,7 @@ class EffectComponent(Component, TrackedMixin):
 	def build_midi_map(self, midi_map_handle : int) -> None:
 		"""Create Live MIDI mappings for the effect controller strips."""
 		
-		log_info(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
+		log_verbose(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
 
 		# COMBINE BOTH ROWS INTO ONE LIST OF 16 ITEMS TO FIX INDEX ERROR
 		# This gives us indices 0-7 for pots, and 8-15 for encoders
@@ -178,7 +178,7 @@ class EffectComponent(Component, TrackedMixin):
 
 			if parameter is not None:
 
-				log_assignment(strip_index, primary_cc_no, parameter.name, "EffectComponent")
+				log_assignment(strip_index, primary_cc_no, parameter.name)
 
 				# ASSIGN MAP MODE DYNAMICALLY BASED ON THE ROW
 				if strip_index < 8:
