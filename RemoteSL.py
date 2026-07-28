@@ -34,7 +34,7 @@ from .Components.DisplayComponent import DisplayComponent, ROW
 from .Components.EffectComponent import EffectComponent
 from .Components.MixerComponent import MixerComponent
 
-from .myLogger import *
+from .RemoteSL_Logger import *
 
 from .tracker import CALL_COUNTS, ALL_METHODS
 

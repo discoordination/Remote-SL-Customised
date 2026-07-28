@@ -30,7 +30,7 @@ else:
 		return func
 
 from ..consts import Constants, H, SYX
-from ..myLogger import log, log_info, log_midi
+from ..RemoteSL_Logger import log, log_info, log_midi
 
 
 

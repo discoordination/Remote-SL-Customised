@@ -19,7 +19,7 @@ capabilities that the Live framework expects from a Remote Script.
 from ableton.v3.control_surface.capabilities import *
 
 from .RemoteSL import RemoteSL
-from .myLogger import *
+from .RemoteSL_Logger import *
 
 
 # okay so this morning...  Add transport controls...  Continue checking order of moving through functions...

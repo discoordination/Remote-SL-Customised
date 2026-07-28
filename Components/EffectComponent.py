@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
 
 from ..consts import Constants, H, FX, M
-from ..myLogger import log, log_info, log_warning, log_error, log_assignment, log_listener_callback, log_verbose
+from ..RemoteSL_Logger import log, log_info, log_warning, log_error, log_assignment, log_listener_callback, log_verbose
 from .DisplayComponent import DisplayComponent
 
 

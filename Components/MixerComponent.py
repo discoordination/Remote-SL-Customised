@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 from .DisplayComponent import DisplayComponent, ROW
 from ..consts import SLM, MXR, Constants, H, M
-from ..myLogger import log, log_assignment, log_error, log_warning, log_info
+from ..RemoteSL_Logger import log, log_assignment, log_error, log_warning, log_info
 
 
 ####################################################################################################################

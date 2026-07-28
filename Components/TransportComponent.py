@@ -16,7 +16,7 @@ from Live.Song import Song
 from Live import MidiMap
 
 from ..consts import H, T, M
-from ..myLogger import log, log_info, log_listener_callback
+from ..RemoteSL_Logger import log, log_info, log_listener_callback
 
 import time
 from typing import Final
