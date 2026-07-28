@@ -4,12 +4,13 @@
 
 
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
-from ableton.v2.control_surface.elements import ButtonElement
+from ableton.v2.control_surface.elements import ButtonElement, EncoderElement
 
 from Live.Song import Song
+from Live import MidiMap
 
 from ..consts import H, T, M
-from ..myLogger import log, log_info
+from ..myLogger import log, log_info, log_listener_callback
 
 import time
 from typing import Final
@@ -60,9 +61,11 @@ class TransportComponent(Component):
 		self._loop_button: 		ButtonElement
 		self._rewind_button: 	ButtonElement 
 		self._fforward_button: 	ButtonElement
+		self._tempo_msb:	 	EncoderElement
+		self._tempo_lsb: 		EncoderElement
 
 		self._create_controls()
-		self._add_button_listeners()
+		self._add_control_listeners()
 		self.song.add_record_mode_listener(self._on_record_mode_changed)
 
 		log_info(f"<-----Returning from TransportComponent.__init__({name},{control_surface}).")
@@ -82,21 +85,26 @@ class TransportComponent(Component):
 		assert result is not None
 		return result
 
-	
-	# def on_enabled(self):
+
+	# ################################################################################################################
+
+
+	def on_enabled(self):
 		
-	# 	log("TransportComponent.on_enabled() called.")
-	# 	# Called when component becomes active – do initial setup
+		log_info("TransportComponent.on_enabled() called.")
+		super().set_enabled(True)
+		# Called when component becomes active – do initial setup
 		
 
 	# ################################################################################################################
 
 
-	# def on_disabled(self):
+	def on_disabled(self):
 		
-	# 	log("TransportComponent.on_disabled() called.")
-	# 	# Called when component is disabled – clean up
-	# 	# e.g., turn off any LEDs
+		log("TransportComponent.on_disabled() called.")
+		super().set_enabled(False)
+		# Called when component is disabled – clean up
+		# e.g., turn off any LEDs
 		
 
 	################################################################################################################
@@ -105,9 +113,9 @@ class TransportComponent(Component):
 	@override
 	def disconnect(self):
 
-		log("TransportComponent.disconnect() called.")
+		log_info("TransportComponent.disconnect() called.")
 
-		self._remove_button_listeners()
+		self._remove_control_listeners()
 		self.song.remove_record_mode_listener(self._on_record_mode_changed)
 
 		super().disconnect()
@@ -118,47 +126,50 @@ class TransportComponent(Component):
 
 	def _create_controls(self):
 
-		log("TransportComponent._create_buttons() called.")
+		log_info("TransportComponent._create_controls() called.")
 
-		# Create buttons
 		self._play_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.PLAY)
 		self._stop_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.STOP)
 		self._record_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.RECORD)
 		self._loop_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.LOOP)
 		self._rewind_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.REWIND)
-		self._fforward_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.FORWARD)	
+		self._fforward_button: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, T.FORWARD)
+		self._tempo_msb = EncoderElement(MIDI_CC_TYPE,H.MIDI_CHANNEL, M.DATA1.TEMPO_MSB, MidiMap.MapMode.absolute)
+		self._tempo_lsb = EncoderElement(MIDI_CC_TYPE,H.MIDI_CHANNEL, M.DATA1.TEMPO_LSB, MidiMap.MapMode.absolute)
 
 
 	################################################################################################################
 
 
-	def _add_button_listeners(self):
+	def _add_control_listeners(self):
 
-		log("TransportComponent._add_button_listeners() called.")
+		log_info("TransportComponent._add_control_listeners() called.")
 
-		# Add button listeners
 		self._play_button.add_value_listener(self._on_play_pressed)
 		self._stop_button.add_value_listener(self._on_stop_pressed)
 		self._record_button.add_value_listener(self._on_rec_pressed)
 		self._loop_button.add_value_listener(self._on_loop_pressed)
 		self._rewind_button.add_value_listener(self._on_rewind_pressed)
 		self._fforward_button.add_value_listener(self._on_fforward_pressed)
+		self._tempo_lsb.add_value_listener(self._on_tempo_lsb)
+		self._tempo_msb.add_value_listener(self._on_tempo_msb)
 
 
 	################################################################################################################
 
 
-	def _remove_button_listeners(self):
+	def _remove_control_listeners(self):
 
-		log("TransportComponent._remove_button_listeners() called.")
+		log_info("TransportComponent._remove_control_listeners() called.")
 
-		# Add button listeners
 		self._play_button.remove_value_listener(self._on_play_pressed)
 		self._stop_button.remove_value_listener(self._on_stop_pressed)
 		self._record_button.remove_value_listener(self._on_rec_pressed)
 		self._loop_button.remove_value_listener(self._on_loop_pressed)
 		self._rewind_button.remove_value_listener(self._on_rewind_pressed)
 		self._fforward_button.remove_value_listener(self._on_fforward_pressed)
+		self._tempo_msb.remove_value_listener(self._on_tempo_msb)
+		self._tempo_lsb.remove_value_listener(self._on_tempo_lsb)
 
 
 	################################################################################################################
@@ -177,7 +188,7 @@ class TransportComponent(Component):
 
 	def _on_stop_pressed(self, value):
 
-		log(f"TransportComponent._on_stop_pressed({value}) called.")
+		log(f"*->TransportComponent._on_stop_pressed({value}) called.")
 		
 		if value == H.BUTTON_PRESSED and self.song:
 			self.song.stop_playing()
@@ -188,7 +199,7 @@ class TransportComponent(Component):
 
 	def _on_fforward_pressed(self, value):
 
-		log(f"TransportComponent._on_fforward_pressed({value}) called.")
+		log(f"*->TransportComponent._on_fforward_pressed({value}) called.")
 
 		if value == H.BUTTON_PRESSED:
 			self._fforward_button_down = True
@@ -206,7 +217,7 @@ class TransportComponent(Component):
 
 	def _on_loop_pressed(self, value):
 
-		log(f"TransportComponent._on_loop_pressed({value}) called.")
+		log(f"*->TransportComponent._on_loop_pressed({value}) called.")
 		if value == H.BUTTON_PRESSED:
 			self.song.loop = not self.song.loop
 
@@ -215,7 +226,7 @@ class TransportComponent(Component):
 
 
 	def _on_record_mode_changed(self):
-		
+
 		# update the record button light. T.RECORD is the same for the button in one way and the light in the other.
 		self.control_surface.send_midi((M.STATUS + H.MIDI_CHANNEL, T.RECORD, self.song.record_mode))
 							 
@@ -225,7 +236,7 @@ class TransportComponent(Component):
 
 	def _on_rec_pressed(self, value):
 
-		log(f"TransportComponent._on_rec_pressed({value}) called.")
+		log(f"*->TransportComponent._on_rec_pressed({value}) called.")
 
 		# here we could contextually either record the song or record a clip if a clip is selected and in clip view.
 
@@ -238,7 +249,7 @@ class TransportComponent(Component):
 
 	def _on_rewind_pressed(self, value):
 
-		log(f"TransportComponent._on_rewind_pressed({value}) called.")
+		log(f"*->TransportComponent._on_rewind_pressed({value}) called.")
 
 		if value == H.BUTTON_PRESSED:
 			
@@ -251,6 +262,24 @@ class TransportComponent(Component):
 		else:
 			self._rewind_button_down = False
 			self._rewind_hold_start_time = None          # Reset timer
+
+
+	################################################################################################################
+
+
+	def _on_tempo_msb(self, value):
+		log_listener_callback(value)
+		self._tempo_msb_value = value
+
+
+	################################################################################################################
+
+
+	def _on_tempo_lsb(self, value):
+		log_listener_callback(value)
+		if hasattr(self, '_tempo_msb_value'):
+			tempo = (self._tempo_msb_value << 7) | value
+			self.song.tempo = tempo
 
 
 	################################################################################################################
