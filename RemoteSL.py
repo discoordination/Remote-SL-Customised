@@ -25,7 +25,7 @@ else:
 
 from .consts import Constants, MIDI, M
 from .Components.TransportComponent import TransportComponent
-from .Components.DisplayComponent import DisplayComponent
+from .Components.DisplayComponent import DisplayComponent, ROW
 from .Components.EffectComponent import EffectComponent
 from .Components.MixerComponent import MixerComponent
 
@@ -107,8 +107,33 @@ class RemoteSL(ControlSurface):
 		log_info("<-----Returning from RemoteSL.__init__().")
 
 
+	################################################################################################################
+
+
 	def _tempo_changed(self):
-		log(f"RemoteSL._tempo_changed() called. New tempo: {self.song.tempo}bpm.")
+
+		self._display_component.show_timed_message(f"bpm: {self.song.tempo}", 2.0, True, ROW.TL, ROW.TR) 
+
+		# It's impossible to set the remotesl tempo via midi message... 
+	
+		# log(f"RemoteSL._tempo_changed() called. New tempo: {self.song.tempo}bpm.")
+
+		# # Convert tempo to 14-bit value (20-320 BPM range)
+		# newTempo = int(round(self.song.tempo))
+
+		# # Clamp to valid range
+		# newTempo = max(20, min(320, newTempo))
+
+		# lsb = newTempo & 0x7F
+		# msb = (newTempo >> 7) & 0x7F
+
+		# # Send on Automap channel (channel 16, status byte 0xBF)
+		# # CC 94 = MSB, CC 95 = LSB
+
+		# for ch in range(8):
+		# 	self.send_midi((0xb0 + ch, 0x5e, msb))   # MSB
+		# 	self.send_midi((0xb0 + ch, 0x5f, lsb))   # LSB
+
 
 	################################################################################################################
 
@@ -124,7 +149,7 @@ class RemoteSL(ControlSurface):
  
 
 	@override
-	def build_midi_map(self, midi_map_handle):
+	def build_midi_map(self, midi_map_handle: int):
 		"""Build the MIDI mappings for all controller components."""
 		
 		log(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
@@ -133,9 +158,7 @@ class RemoteSL(ControlSurface):
 			super(RemoteSL, self).build_midi_map(midi_map_handle)
 
 		except Exception as e:
-			log(f"****Error in super().build_midi_map({midi_map_handle}): {e}.")
-
-		#if not self._automap_has_control:
+			log_error(f"Error in super().build_midi_map({midi_map_handle}): {e}.")
 
 		try:
 			for component in self._components:
@@ -143,6 +166,7 @@ class RemoteSL(ControlSurface):
 					component.build_midi_map(midi_map_handle) #(self.handle(), midi_map_handle)
 		except Exception as e:
 			log(f"****Error in component.build_midi_map({midi_map_handle}): {e}")
+
 
 		self.set_pad_translations(Constants.PAD_TRANSLATION)
 
@@ -339,79 +363,89 @@ class RemoteSL(ControlSurface):
 ################################################################################################################
 
 
-	# This is now called by registered button listeners.
-	@override
-	def receive_midi(self, midi_bytes):
-		"""Route incoming MIDI messages to the effect or mixer controller."""
+	# # This is now called by registered button listeners.
+	# @override
+	# def receive_midi(self, midi_bytes):
+	# 	"""Route incoming MIDI messages to the effect or mixer controller."""
 
-		log_midi("IN", midi_bytes, "RemoteSL")
+	# 	log_info("=== receive_midi CALLED ===")  # ← THIS WILL TELL YOU IF IT'S BEING CALLED
+	# 	log_midi("IN", midi_bytes, "RemoteSL")
 
-		if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
-			log_error("Error: ...receive_mid() blank midi message received.")
-			return None
+	# 	if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
+	# 		log_error("Error: ...receive_mid() blank midi message received.")
+	# 		return None
 
-		status = midi_bytes[0] & 0xf0
-		# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
+	# 	#log_midi("IN", midi_bytes)
 
-		#log(f"\t----->status = {bin(status)}")
+	# 	msg_type = midi_bytes[0] & 0xf0
+	# 	# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
 
-		# if it's a midi note on or midi note off.
-		if status in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
+	# 	#log(f"\t----->status = {bin(status)}")
+
+	# 	# if it's a midi note on or midi note off.
+	# 	if msg_type in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
 			
-			note = midi_bytes[1]
-			velocity = midi_bytes[2]
+	# 		note = midi_bytes[1]
+	# 		velocity = midi_bytes[2]
 			
-			if note in Constants.Effect.DRUM_PADS:
-				# send drum pad note to effect controller.
-				self._effect_component.receive_midi_note(note, velocity)
-				return None
+	# 		if note in Constants.Effect.DRUM_PADS:
+	# 			# send drum pad note to effect controller.
+	# 			self._effect_component.receive_midi_note(note, velocity)
+	# 			return None
 			
-			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
-			return None
+	# 		log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
+	# 		return None
 
-		# if it's a midi status update.
-		if status == Constants.MIDI.STATUS:
+	# 	# if it's a midi status update.
+	# 	if msg_type == Constants.MIDI.CC:
 			
-			cc_no = midi_bytes[1]
-			cc_value = midi_bytes[2]
+	# 		data1 = midi_bytes[1]
+	# 		data2 = midi_bytes[2]
 
-			#log("\t----->status byte received.")
+	# 		if data1 == Constants.MIDI.DATA1.TEMPO_MSB:
+	# 			self._tempo_msb = data2
+	# 			return
 
-			if cc_no in Constants.Effect.ALL:
-				self._effect_component.receive_midi_cc(cc_no, cc_value)
-				return None
+	# 		elif data1 == Constants.MIDI.DATA1.TEMPO_LSB:
+	# 			tempo_lsb = data2
+	# 			self.song.tempo = (self._tempo_msb << 7) | tempo_lsb
+	# 			log(f"Sending midi tempo change {(self._tempo_msb << 7) | tempo_lsb}")
+	# 			return
+			
+	# 		log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
+	# 		return None
+
+
+	# 	# It's a sysex message.
+	# 	if msg_type == Constants.MIDI.SYSEX:
+			
+	# 		log(f"\t|----->Received a sysex message.")
+
+	# 		if (    len(midi_bytes) == 13 or 
+	#    				midi_bytes[1:4] == (0, 32, 41) or
+	# 				  midi_bytes[8] == Constants.Hardware.ABLETON_PID or 
+	# 				 midi_bytes[10] == 1
+	# 			):
 				
-			log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
-			return None
+	# 			log_warning(f"\t|----->message: {midi_bytes} has passed the strange tests and is being processed.")
 
-
-		# It's a sysex message.
-		if status == 0xf0:
-			
-			log(f"\t|----->Received a sysex message.")
-
-			if (    len(midi_bytes) == 13 or 
-	   				midi_bytes[1:4] == (0, 32, 41) or
-					  midi_bytes[8] == Constants.Hardware.ABLETON_PID or 
-					 midi_bytes[10] == 1
-				):
+	# 			self.send_midi(MIDI.ALL_LEDS_OFF)
 				
-				log(f"\t|----->message: {midi_bytes} has passed the strange tests and is being processed.")
+	# 			for component in self.components:
+	# 				component.refresh_state()
 
-				self.send_midi(MIDI.ALL_LEDS_OFF)
-				
-				for component in self._components:
-					component.refresh_state()
+	# 			self.request_rebuild_midi_map()
 
-				self.request_rebuild_midi_map()
+	# 			return None
 
-				return None
+	# 		else:
+	# 			log_warning("Unknown SYSEX message received.")
 			
 
-		print("unknown MIDI message %s" % str(midi_bytes))
-		super(RemoteSL, self).receive_midi(midi_bytes)
+	# 	log_warning("unknown MIDI message %s" % str(midi_bytes))
+	# 	super(RemoteSL, self).receive_midi(midi_bytes)
 
-		return None
+	# 	return None
 	
 
 	################################################################################################################
@@ -590,11 +624,8 @@ class RemoteSL(ControlSurface):
 				self.update_hardware()
 
 
-		for component in self._components: # <- update eventually to .components
-			if hasattr(component, "update_display"):
-				component.update_display()
-			elif hasattr(component, "update"):
-				component.update()
+		for component in self.components:
+			component.update()
 
 
 	@override
@@ -612,7 +643,7 @@ class RemoteSL(ControlSurface):
 
 		self.send_midi(Constants.SysEx.WELCOME)
 		
-		for component in self._components:
+		for component in self.components:
 			#TODO: Review if refresh state is necessary or a good idea.	
 			if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
 				pass
