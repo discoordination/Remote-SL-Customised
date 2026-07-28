@@ -22,22 +22,6 @@ from typing import Optional
 ####################################################################################################################
 
 
-# --- Configuration ---
-LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
-LOG_LEVEL = "INFO"  # DEBUG, VERBOSE, INFO, WARNING, ERROR
-
-LOG_ENABLED = True
-LOG_MIDI = True               # ← Toggle MIDI category
-LOG_LISTENERS = True          # ← Toggle listener callback category
-LOG_ASSIGNMENTS = False       # ← Toggle assignment category
-
-# --- Per‑file logging control ---
-LOG_FILES = []  # Empty = all files; add filenames to filter
-
-
-####################################################################################################################
-
-
 # --- Log Levels ---
 class LogLevel(Enum):
 	DEBUG = 0
@@ -46,8 +30,25 @@ class LogLevel(Enum):
 	WARNING = 3
 	ERROR = 4
 
-_current_level = getattr(LogLevel, LOG_LEVEL, LogLevel.INFO)
 
+
+####################################################################################################################
+
+
+# --- Configuration ---
+LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
+LOG_LEVEL = LogLevel.DEBUG  # DEBUG, VERBOSE, INFO, WARNING, ERROR
+
+LOG_ENABLED = True
+LOG_MIDI = True               # ← Toggle MIDI category
+LOG_LISTENERS = True          # ← Toggle listener callback category
+LOG_ASSIGNMENTS = False       # ← Toggle assignment category
+
+# --- Per‑file logging control ---
+LOG_FILES = [ "EffectComponent.py" ]  # Empty = all files; add filenames to filter
+#LOG_FILES = []
+
+_current_level = LOG_LEVEL
 
 ####################################################################################################################
 
@@ -120,6 +121,10 @@ class Logger:
 	def _should_log_file(self, filename: str) -> bool:
 		if not LOG_FILES:
 			return True
+		base = os.path.basename(filename)
+		with open(r"C:\\Users\\willw\\Desktop\\debug.txt", "a") as d:
+			d.write(f"Checking: {base}\n")
+
 		return os.path.basename(filename) in LOG_FILES
 
 
@@ -142,9 +147,11 @@ class Logger:
 
 		# Find the caller frame (skip this module)
 		current_frame = inspect.currentframe()
+		logger_filename = os.path.basename(__file__)
+
 		while current_frame:
 			filename = current_frame.f_code.co_filename
-			if "myLogger.py" not in filename:
+			if logger_filename not in filename:
 				break
 			current_frame = current_frame.f_back
 
