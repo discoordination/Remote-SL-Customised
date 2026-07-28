@@ -183,14 +183,25 @@ class Constants:
 	class MIDI:
 		"""MIDI status byte constants."""
 
-		NOTE_OFF: Final[int] = 0x80
-		NOTE_ON: Final[int] = 0x90
-		STATUS: Final[int] = 0xB0
-		CC: Final[int] = 0xB0
-		SYSEX: Final[int] = 0xF0
+		# MIDI BYTE1 0b 1ttt nnnn ...  0b0ddd dddd ... 0b0ddd dddd 
+		#				type  ch
+		NOTE_OFF: Final[int] 	= 0x80 # 1000 0000 
+		NOTE_ON: Final[int] 	= 0x90 # 1001 0000
+		POL_AFTR_T: Final[int] 	= 0xA0 # 1010 0000
+		CC: Final[int] 			= 0xB0 # 1011 0000
+		STATUS: Final[int] 		= 0xB0
+		PROG_CH: Final[int]		= 0xC0 # 1100 0000
+		CH_AFTR_T: Final[int]	= 0xD0 # 1101 0000
+		PITCH_WH: Final[int]	= 0xE0 # 1110 0000
+		SYSEX: Final[int] 		= 0xF0 # 1111 0000
+
 		CHANNEL: Final[int] = 0
 
 		START_BYTE: Final[int] = STATUS + CHANNEL
+
+		class DATA1:
+			TEMPO_MSB: Final[int] = 0x5E # 0101 1110
+			TEMPO_LSB: Final[int] = 0x5F # 0101 1111
 
 		class CMD:
 
