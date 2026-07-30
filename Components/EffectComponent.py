@@ -4,9 +4,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 ####################################################################################################################
-####################################################################################################################
 #
 # EffectComponent.py
+#
+####################################################################################################################
 ####################################################################################################################
 
 
@@ -54,7 +55,7 @@ if TYPE_CHECKING:
 
 from ..consts import Constants, H, FX, M
 from ..RemoteSL_Logger import log, log_info, log_warning, log_error, log_assignment, log_listener_callback, log_verbose
-from .DisplayComponent import DisplayComponent
+from .DisplayComponent import DisplayComponent, DISPLAY, ROW
 
 
 from ..tracker import TrackedMixin
@@ -86,7 +87,7 @@ class EffectComponent(Component, TrackedMixin):
 		self._btn_sel_top_btns : ButtonElement
 		self._btn_sel_pots 	   : ButtonElement
 		self._btn_sel_btm_btns : ButtonElement
-		self._btn_sel_dpads	   : ButtonElement
+		#self._btn_sel_dpads	   : ButtonElement
 		
 		self._buttons_upper_row  : list[ButtonElement]
 		self._buttons_bottom_row : list[ButtonElement]
@@ -94,7 +95,7 @@ class EffectComponent(Component, TrackedMixin):
 		# --------------------------------------
 
 		self._create_controls()
-		self._add_button_listeners()
+		self._add_control_listeners()
 		
 		self._last_selected_track = None
 		self._blank_prompt_is_drawn = False
@@ -122,7 +123,7 @@ class EffectComponent(Component, TrackedMixin):
 
 		#self.reassign_strips() is called in change_assigned_device
 
-		log_info("<-----Returning from EffectComponent.__init__().")
+		log("<-----Returning from EffectComponent.__init__().")
 
 
 	################################################################################################################
@@ -146,7 +147,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _add_button_listeners(self):
+	def _add_control_listeners(self):
 
 		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)     
 		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
@@ -154,7 +155,6 @@ class EffectComponent(Component, TrackedMixin):
 		self._btn_sel_top_btns.add_value_listener(self._on_btn_sel_top_btns_pressed)
 		self._btn_sel_pots.add_value_listener(self._on_btn_sel_pots_pressed)
 		self._btn_sel_btm_btns.add_value_listener(self._on_btn_sel_btm_btns_pressed)
-		self._btn_sel_dpads.add_value_listener(self._on_btn_sel_dpads_pressed)
 
 		[button.add_value_listener(self._on_top_row_button_pressed, identify_sender = True) for button in self._buttons_upper_row]
 		[button.add_value_listener(self._on_btm_row_button_pressed, identify_sender = True) for button in self._buttons_bottom_row]
@@ -167,7 +167,7 @@ class EffectComponent(Component, TrackedMixin):
 	def build_midi_map(self, midi_map_handle : int) -> None:
 		"""Create Live MIDI mappings for the effect controller strips."""
 		
-		log_verbose(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
+		log_info(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
 
 		# COMBINE BOTH ROWS INTO ONE LIST OF 16 ITEMS TO FIX INDEX ERROR
 		# This gives us indices 0-7 for pots, and 8-15 for encoders
@@ -261,7 +261,7 @@ class EffectComponent(Component, TrackedMixin):
 		self._btn_sel_top_btns = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_TOP_BUTTON_ROW)
 		self._btn_sel_pots 	   = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_POTS)
 		self._btn_sel_btm_btns = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_BOTTOM_BUTTON_ROW)
-		self._btn_sel_dpads	   = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_DRUM_PAD)
+		#self._btn_sel_dpads	   = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.SELECT_DRUM_PAD)
 
 		self._buttons_upper_row  = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc) for cc in FX.UPPER_BUTTONS]
 		self._buttons_bottom_row = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc) for cc in FX.UPPER_BUTTONS]
@@ -277,7 +277,7 @@ class EffectComponent(Component, TrackedMixin):
 		log_info("EffectComponent.disconnect() called")
 
 		self._change_assigned_device(None)
-		self._remove_button_listeners()
+		self._remove_control_listeners()
 
 		self.song.remove_appointed_device_listener(self._on_appointed_device_changed)
 		self.song.remove_tracks_listener(self._on_tracks_changed)
@@ -666,22 +666,20 @@ class EffectComponent(Component, TrackedMixin):
 				active_params = parameters[8:]
 
 
-			self._display_component.setup_left_display(active_names, active_params)
+			self._display_component.setup_display_for_params(DISPLAY.LEFT, active_names, active_params)
 
 
 		else:
 			# This is for if no device is selected.
-
 			for strip in self._strips:
 				strip.assigned_parameter = None
 
 			log("CLEARING SCREEN: Caching original single-string text prompt...")
 			
-			# Save a pure 1-item text string array inside the display controller variables
-			param_names = ["Please select a Device in Live to edit it..."]
+			no_device_msg = "Please select a Device in Live to edit it..."
 			parameters = [None for _ in range(8)]
 			
-			self._display_component.setup_left_display(param_names, parameters)
+			self._display_component.write_display_rows(no_device_msg, ROW.TL)
 
 
 		# Wrap this line so it only fires when explicitly requested
@@ -773,7 +771,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _remove_button_listeners(self):
+	def _remove_control_listeners(self):
 	
 		self._btn_page_up.remove_value_listener(self._on_btn_page_up_pressed)     
 		self._btn_page_down.remove_value_listener(self._on_btn_page_down_pressed)
@@ -781,7 +779,7 @@ class EffectComponent(Component, TrackedMixin):
 		self._btn_sel_top_btns.remove_value_listener(self._on_btn_sel_top_btns_pressed)
 		self._btn_sel_pots.remove_value_listener(self._on_btn_sel_pots_pressed)
 		self._btn_sel_btm_btns.remove_value_listener(self._on_btn_sel_btm_btns_pressed)
-		self._btn_sel_dpads.remove_value_listener(self._on_btn_sel_dpads_pressed)
+		#self._btn_sel_dpads.remove_value_listener(self._on_btn_sel_dpads_pressed)
 
 		[button.remove_value_listener(self._on_top_row_button_pressed) for button in self._buttons_upper_row]
 		[button.remove_value_listener(self._on_btm_row_button_pressed) for button in self._buttons_bottom_row]

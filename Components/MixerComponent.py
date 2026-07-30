@@ -24,11 +24,11 @@ from Live.Song import Song
 from Live.DeviceParameter import DeviceParameter
 
 from ableton.v2.control_surface import Component, MIDI_CC_TYPE
-from ableton.v2.control_surface.elements import ButtonElement
+from ableton.v2.control_surface.elements import ButtonElement, SliderElement
 
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
 
 
-from .DisplayComponent import DisplayComponent, ROW
+from .DisplayComponent import DisplayComponent, ROW, DISPLAY
 from ..consts import SLM, MXR, Constants, H, M
 from ..RemoteSL_Logger import log, log_assignment, log_error, log_warning, log_info
 
@@ -89,6 +89,7 @@ class MixerComponent(Component):
 		self._btn_sel_tbs:	  ButtonElement
 		self._btn_sel_bbs:	  ButtonElement
 
+		#self._faders:		list[SliderElement]
 		self._btns_top_row:	list[ButtonElement]
 		self._btns_btm_row:	list[ButtonElement]
 
@@ -103,7 +104,7 @@ class MixerComponent(Component):
 		self._layout_mode: LayoutMode = LayoutMode.STANDARD
 
 		self._create_controls()
-		self._add_button_listeners()
+		self._add_control_listeners()
 
 		self.song.add_visible_tracks_listener(self._on_tracks_added_or_deleted)
 
@@ -112,7 +113,6 @@ class MixerComponent(Component):
 		self.control_surface.request_rebuild_midi_map()
 
 		log_info(f"<-----Returning from MixerComponent.__init__({control_surface}, {name}).")
-
 
 
 	################################################################################################################
@@ -162,7 +162,7 @@ class MixerComponent(Component):
 	################################################################################################################
 
 
-	def _add_button_listeners(self) -> None:
+	def _add_control_listeners(self) -> None:
 		
 		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)
 		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
@@ -170,6 +170,7 @@ class MixerComponent(Component):
 		self._btn_sel_tbs.add_value_listener(self._on_btn_sel_tbs_pressed)
 		self._btn_sel_bbs.add_value_listener(self._on_btn_sel_bbs_pressed)
 
+		#[fader.add_value_listener(self._on_fader_moved, identify_sender=True) for fader in self._faders]
 		[btn.add_value_listener(self._on_btn_in_top_row_pressed, identify_sender=True) for btn in self._btns_top_row]
 		[btn.add_value_listener(self._on_btn_in_btm_row_pressed, identify_sender=True) for btn in self._btns_btm_row]
 
@@ -342,7 +343,6 @@ class MixerComponent(Component):
 
 		if value:
 			if self._slider_mode != SLM.VOLUME:
-
 				self._set_slider_mode(SLM.VOLUME)
 
 			else:
@@ -362,6 +362,20 @@ class MixerComponent(Component):
 
 		if value:
 			self._set_slider_mode(SLM.PAN)
+
+
+	################################################################################################################
+
+
+	def _on_strip_parameter_changed(self, strip_index: int):
+		"""Called when a parameter on a strip changes."""
+
+		# Update the display for this strip only
+		strip = self._strips[strip_index]
+		param = strip.slider_parameter()
+
+		if param is not None:
+			self._display_component.update_parameter(strip_index, param)
 
 
 	################################################################################################################
@@ -401,8 +415,9 @@ class MixerComponent(Component):
 		# Get tracks based on display mode
 		tracks = self._get_filtered_tracks()
 
-		track_names = []
-		parameters = []
+		track_names: list[str] = []
+		parameters: list[Optional[DeviceParameter]] = []
+
 		self._validate_strip_offset()
 		track_index = self._strip_offset
 
@@ -433,7 +448,7 @@ class MixerComponent(Component):
 				parameters.append(None)
 			
 	
-		self._display_component.setup_right_display(track_names, parameters)
+		self._display_component.setup_display_for_params(DISPLAY.RIGHT, track_names, parameters)
 
 		#self.control_surface.request_rebuild_midi_map() # We don't do it here because maybe mapping hasn't changed,
 		#			ie. perhaps only the name has changed.
@@ -634,7 +649,7 @@ class MixerChannelStrip(object):
 
 		self._mixer_controller : MixerComponent = mixer_controller_parent
 		self._index : int = index
-		self._assigned_track : Track | None = None
+		self._assigned_track : Optional[Track] = None
 
 
 	################################################################################################################
@@ -648,15 +663,35 @@ class MixerChannelStrip(object):
 	################################################################################################################
 
 
-	def assigned_track(self) -> Track | None:
+	def assigned_track(self) -> Optional[Track]:
 		return self._assigned_track
+
+
+	################################################################################################################
+
+	def _on_parameter_value_changed(self, value = None):
+		self._mixer_controller._on_strip_parameter_changed(self._index)
 
 
 	################################################################################################################
 
 
 	def set_assigned_track(self, track: Track | None):
+
+		# If track is being set to none or track is changing. Then if there is a parameter and it has a listener remove.
+        # Remove listener from old parameter if any
+		if self._assigned_track is not None:
+			old_param = self.slider_parameter()
+			if old_param and old_param.value_has_listener(self._on_parameter_value_changed):
+				old_param.remove_value_listener(self._on_parameter_value_changed)
+
 		self._assigned_track = track
+
+		# Add listener to new parameter if available
+		if track is not None:
+			new_param = self.slider_parameter()
+			if new_param and not new_param.value_has_listener(self._on_parameter_value_changed):
+				new_param.add_value_listener(self._on_parameter_value_changed)
 
 
 	################################################################################################################
@@ -687,13 +722,13 @@ class MixerChannelStrip(object):
 	################################################################################################################
 
 
-	def slider_moved(self, cc_value: int) -> None:
+	# def slider_moved(self, cc_value: int) -> None:
 
-		log(f"MixerController.slider_moved({cc_value}) called.")
-		parameter = self.slider_parameter() # get the parameter.
+	# 	log(f"MixerController.slider_moved({cc_value}) called.")
+	# 	parameter = self.slider_parameter() # get the parameter.
 
-		if parameter and hasattr(parameter, "min") and hasattr(parameter, "max") and parameter.max != parameter.min:
-			parameter.value = parameter.min + (parameter.max - parameter.min) * (float(cc_value) / 127.0)
+	# 	if parameter and hasattr(parameter, "min") and hasattr(parameter, "max") and parameter.max != parameter.min:
+	# 		parameter.value = parameter.min + (parameter.max - parameter.min) * (float(cc_value) / 127.0)
 
 
 	################################################################################################################
