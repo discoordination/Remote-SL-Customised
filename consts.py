@@ -69,6 +69,12 @@ class Constants:
 
 	################################################################################################################
 
+	
+		
+
+
+	################################################################################################################
+
 
 	# === Transport Controls ===
 	class Transport:
@@ -81,10 +87,10 @@ class Constants:
 		PLAY: Final[int] = 75
 		RECORD: Final[int] = 76
 		LOOP: Final[int] = 77
-		LOCK: Final[int] = 79
+		#LOCK: Final[int] = 79
 		
 		# Group all transport CCs
-		ALL:Final[CCList] = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP, LOCK]
+		ALL:Final[CCList] = [REWIND, FORWARD, STOP, PLAY, RECORD, LOOP] #, LOCK]
 		
 		# Map CC to action name (useful for debugging)
 		NAMES: Final[dict[int, str]] = {
@@ -94,7 +100,7 @@ class Constants:
 			PLAY: "Play",
 			RECORD: "Record",
 			LOOP: "Loop",
-			LOCK: "Lock"
+			#LOCK: "Lock"
 		}
 	
 
@@ -237,7 +243,7 @@ class Constants:
 		# F0 - 			MIDI sysex start.
 		# 00, 20, 29 - 	Novation Manufacturer ID.
 		# 03, 03 - 		Automap.
-		# 12, 00 -		VV, Bb version and beta.
+		# 12, 00 -		VV, Bb version and beta.  !!!! changed to 16, 05 (0x10, 0x05)
 		# 04 -			Template number 04 is Ableton, 02 is Automap.
 		# F7 - 			MIDI sysex end.
 
@@ -247,8 +253,8 @@ class Constants:
 			END : Final[SysexMessage] = (0xF7,)
 			MAN_ID : Final[SysexMessage] = (0x00, 0x20, 0x29)
 			AUTOMAP: Final[SysexMessage] = (0x03, 0x03)
-			VERSION: Final[SysexMessage] = (0x12,)
-			BETA: Final[SysexMessage] = (0x00,)
+			VERSION: Final[SysexMessage] = (0x10,)
+			BETA: Final[SysexMessage] = (0x05,)
 			BLANK: Final[SysexMessage] = (0x00,)
 
 		class TEMPL():
@@ -300,7 +306,7 @@ class Constants:
 		WELCOME: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x01,) + END_MSG # 01 go to ableton mode
 		GOODBYE: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x00,) + END_MSG # 00 show ableton is offline
 
-
+		RECEIVE_SYSEX_HEADER: Final[SysexMessage] = _.START + _.MAN_ID + _.AUTOMAP + _.VERSION + _.BETA
 
 		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
 		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG
