@@ -19,7 +19,7 @@ from Live import MidiMap
 from _Generic.util import DeviceAppointer
 
 from ableton.v2.control_surface import ControlSurface, Component, Layer, Skin, MIDI_CC_TYPE, MIDI_NOTE_TYPE
-from ableton.v2.control_surface.elements import ButtonElement, EncoderElement
+from ableton.v2.control_surface.elements import ButtonElement, EncoderElement, SysexElement
 
 #from ableton.v2.base.task import wait, sequence, run
 
@@ -34,7 +34,7 @@ else:
 	def override(func):
 		return func
 
-from .consts import Constants, MIDI, M
+from .consts import Constants, MIDI, M, SYX
 from .Components.TransportComponent import TransportComponent
 from .Components.DisplayComponent import DisplayComponent, ROW
 from .Components.EffectComponent import EffectComponent
@@ -73,22 +73,27 @@ class RemoteSL(ControlSurface):
 
 		self._drumPad_buttons: list[ButtonElement] = []
 		self._drumPad_select_button: ButtonElement
-		self._create_controls()
-		self._add_control_listeners()
+
 
 		with self.component_guard():
+
+			self._sysex_receiver: SysexElement = SysexElement(sysex_identifier=SYX.RECEIVE_SYSEX_HEADER) #SYX._.START + SYX._.MAN_ID)
+			self._sysex_receiver.add_value_listener(self._on_sysex_received)
 			
-			log("\t|----->Building DisplayComponent...")
+			log_verbose("\t|----->Building DisplayComponent...")
 			self._display_component = DisplayComponent(self)
 
-			log("\t|----->Building EffectController...")
+			log_verbose("\t|----->Building EffectController...")
 			self._effect_component = EffectComponent(self)
 
-			log("\t|----->Building MixerController...")
+			log_verbose("\t|----->Building MixerController...")
 			self._mixer_component = MixerComponent(self)
 
-			log("\t|----->Building TransportComponent...")
+			log_verbose("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
+
+			self._create_controls()
+			self._add_control_listeners()
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
@@ -102,6 +107,8 @@ class RemoteSL(ControlSurface):
 
 		# Only show message after initialization complete as it relies on c_instance...
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
+		# self._display_component.show_timed_message("Welcome to RemoteSL Customized", 5.0, True, ROW.TL)
+		# self._display_component.show_timed_message("discoordinated by Will W", 5.0, True, ROW.TR) 
 
 		# Do some quick checks.
 		if self._enabled == False:
@@ -121,7 +128,7 @@ class RemoteSL(ControlSurface):
 		# generate_stub(ControlSurface, "./ControlSurface.pyi")
 		#self.set_enabled(True)
 
-		log_info("<-----Returning from RemoteSL.__init__().")
+		log_verbose("<-----Returning from RemoteSL.__init__().")
 
 
 	################################################################################################################
@@ -132,7 +139,7 @@ class RemoteSL(ControlSurface):
 		for i in range(8):
 			self._drumPad_buttons[i].add_value_listener(self._on_drum_pad_action, identify_sender = True)
 
-		self._btn_sel_dpads.add_value_listener(self._on_btn_sel_dpads_pressed)
+		self._drumPad_select_button.add_value_listener(self._on_drum_pad_select_pressed)
 
 
 	################################################################################################################
@@ -143,7 +150,7 @@ class RemoteSL(ControlSurface):
 	def build_midi_map(self, midi_map_handle: int):
 		"""Build the MIDI mappings for all controller components."""
 		
-		log(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
+		log_info(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
 
 		try:
 			super(RemoteSL, self).build_midi_map(midi_map_handle)
@@ -156,9 +163,9 @@ class RemoteSL(ControlSurface):
 				if hasattr(component, "build_midi_map"): # <-- transport components don't build midi maps.
 					component.build_midi_map(midi_map_handle) #(self.handle(), midi_map_handle)
 		except Exception as e:
-			log(f"****Error in component.build_midi_map({midi_map_handle}): {e}")
+			log_error(f"in component.build_midi_map({midi_map_handle}): {e}")
 
-
+		
 		self.set_pad_translations(Constants.PAD_TRANSLATION)
 
 
@@ -177,7 +184,7 @@ class RemoteSL(ControlSurface):
 	def clean_track_switch_hook(self):
 		"""	# --- CHANNELS MONITOR: INSTANT BLANK TRACK SCREEN WIPER ---"""
 
-		log(f"RemoteSL.clean_track_switch_hook_called() called.")
+		log_info(f"RemoteSL.clean_track_switch_hook_called() called.")
 
 		# --- THE ABSOLUTE LOGIC GATE ---
 		# Check if our effect controller exists and if a lock is currently active
@@ -218,8 +225,10 @@ class RemoteSL(ControlSurface):
 			fallback_names = ["Please select a Device in Live to edit it..."]
 			fallback_params = [None for _ in range(16)]
 			
-			self._display_component.setup_left_display(fallback_names, fallback_params)
+			self._display_component.setup_left_display_for_params(fallback_names, fallback_params)
 
+		log_verbose("|<-----Returning from clean_track_switch_hook()")
+			  
 
 	################################################################################################################
 
@@ -251,7 +260,9 @@ class RemoteSL(ControlSurface):
 	def disconnect(self):
 		"""Disconnect all components and send the shutdown MIDI messages."""
 
-		log("RemoteSL.disconnect() called.")
+		log_info("RemoteSL.disconnect() called.")
+
+		self._sysex_receiver.remove_value_listener(self._on_sysex_received)
 
 		self._device_appointer.disconnect()
 		self._remove_control_listeners()
@@ -271,20 +282,21 @@ class RemoteSL(ControlSurface):
 		called = set(CALL_COUNTS.keys())
 		uncalled = ALL_METHODS - called
 		if uncalled:
-			log("=== Uncalled Methods ===")
+			log_info("=== Uncalled Methods ===")
 			for method in sorted(uncalled):
 				log(f"  {method}")
-			log("=========================")
+			log_info("=========================")
 		else:
-			log("All tracked methods were called at least once.")
+			log_info("All tracked methods were called at least once.")
 
 		# Optionally, also log call counts for all methods:
-		log("=== Call Counts ===")
+		log_info("=== Call Counts ===")
 		for method, count in sorted(CALL_COUNTS.items(), key=lambda x: x[1], reverse=True):
-			log(f"  {method}: {count}")
-		log("===================")
+			log_info(f"  {method}: {count}")
+		log_info("===================")
 
 		#-------------------------------------------------------------------------
+		log_verbose(f"<-----Returning from RemoteSL.disconnect()")
 
 
 	################################################################################################################
@@ -311,7 +323,7 @@ class RemoteSL(ControlSurface):
 	@override
 	def lock_to_device(self, device):
 		
-		log(f"RemoteSL._lock_to_device({device}) called.")
+		log_info(f"RemoteSL._lock_to_device({device}) called.")
 
 		"""Lock the effect controller to the given device."""
 		super(RemoteSL, self).lock_to_device(device)
@@ -334,13 +346,13 @@ class RemoteSL(ControlSurface):
 		#else:
 		#	log("***ERROR***: RemoteSL._effect_controller is None.")
 
-		log_info(f"<-----Returning from _on_appointed_device_changed({device})", LogCategory.LISTENER)
+		log_verbose(f"<-----Returning from _on_appointed_device_changed({device})", LogCategory.LISTENER)
 
 
 	################################################################################################################
 
 
-	def _on_btn_sel_dpads_pressed(self, value):
+	def _on_drum_pad_select_pressed(self, value):
 		log(f"_on_btn_sel_dpads_pressed({value}) called.", category=LogCategory.LISTENER)
 
 
@@ -350,7 +362,35 @@ class RemoteSL(ControlSurface):
 	def _on_drum_pad_action(self, value, sender):
 		log(f"DrumPad pressed: value: {value}, sender: {sender}", category=LogCategory.LISTENER)
 
-		
+
+	################################################################################################################
+
+
+	def _on_sysex_received(self, message_data):
+		log_info(f"RemoteSL._on_sysex_received({message_data}) called.", category=LogCategory.LISTENER)
+
+		template = message_data[0]
+		_ = message_data[1] # This is the blank.
+		data0 = message_data[2] # the command type.
+
+		log_verbose(f"len(message_data): {len(message_data)}.  data0: {data0}")
+		log_verbose(f"Is statement truthy: {len(message_data) == 4 and (data0,) == SYX.CMD.START_END}")
+
+		if len(message_data) == 4 and data0 == SYX.CMD.START_END[0]: # A start/end command.
+
+			log_verbose("got to point A.")
+
+			data1 = message_data[3] # the value leaving or coming.
+
+			if template == SYX.TEMPL.ABLTN[0]: # Our template.
+				log_verbose("Got to point B")
+				if data1 == 1:
+					self.update_hardware()
+				else:
+					log_verbose("disconnecting.")
+					self.disconnect()
+				
+		   
 	################################################################################################################
 
 
@@ -386,11 +426,11 @@ class RemoteSL(ControlSurface):
 	def refresh_state(self):
 		"""Trigger a refresh of the controller hardware state."""
 
-		log("*->RemoteSL.refresh_state() called.")
+		log_info("*->RemoteSL.refresh_state() called.")
 
 		self._update_hardware_delay = 5
 
-		log("<-----Returning from RemoteSL.refresh_state().")
+		log_verbose("<-----Returning from RemoteSL.refresh_state().")
 		#super(RemoteSL, self).refresh_state() # don't call this now as it requires update().
 
 
@@ -411,7 +451,7 @@ class RemoteSL(ControlSurface):
 	def _remove_control_listeners(self):
 				
 		[drumPad.remove_value_listener(self._on_drum_pad_action) for drumPad in self._drumPad_buttons]
-		self._drumPad_select_button.remove_value_listener(self._on_btn_sel_dpads_pressed)
+		self._drumPad_select_button.remove_value_listener(self._on_drum_pad_select_pressed)
 
 
 	################################################################################################################
@@ -514,7 +554,7 @@ class RemoteSL(ControlSurface):
 	def unlock_from_device(self, device):
 		"""Unlock the effect controller from the given device."""
 
-		log(f"RemoteSL.unlock_from_device({device}) called.")
+		log_info(f"RemoteSL.unlock_from_device({device}) called.")
 
 		self._effect_component._unlock_from_device(device)
 
@@ -524,7 +564,7 @@ class RemoteSL(ControlSurface):
 
 	@override
 	def update(self):
-		log("*->RemoteSL.update() called.")
+		log_info("*->RemoteSL.update() called.")
 		super().update()
 
 
@@ -542,6 +582,8 @@ class RemoteSL(ControlSurface):
 			self._update_hardware_delay -= 1
 			if self._update_hardware_delay == 0:
 				self.update_hardware()
+				self._display_component.show_timed_message("Welcome to RemoteSL Customized", 6.0, True, ROW.TL)
+				self._display_component.show_timed_message("discoordinated by Will W", 6.0, True, ROW.TR) 
 
 
 		for component in self.components:
@@ -554,9 +596,11 @@ class RemoteSL(ControlSurface):
 	def update_hardware(self):
 		"""Initialise the hardware and refresh each controller component."""
 
-		log("RemoteSL.update_hardware() called.")
+		log_info("RemoteSL.update_hardware() called.")
 
 		self.send_midi(Constants.SysEx.WELCOME)
+
+		#self.refresh_state() # can't call this as it's a loop.
 		
 		for component in self.components:
 			#TODO: Review if refresh state is necessary or a good idea.	
@@ -600,88 +644,88 @@ class RemoteSL(ControlSurface):
 
 
 	# # This is now called by registered button listeners.
-	# @override
-	# def receive_midi(self, midi_bytes):
-	# 	"""Route incoming MIDI messages to the effect or mixer controller."""
+	@override
+	def receive_midi(self, midi_bytes):
+		"""Route incoming MIDI messages to the effect or mixer controller."""
 
-	# 	log_info("=== receive_midi CALLED ===")  # ← THIS WILL TELL YOU IF IT'S BEING CALLED
-	# 	log_midi("IN", midi_bytes, "RemoteSL")
+		log_warning("=== receive_midi CALLED ===")  # ← THIS WILL TELL YOU IF IT'S BEING CALLED
+		log_midi("IN", midi_bytes)
 
-	# 	if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
-	# 		log_error("Error: ...receive_mid() blank midi message received.")
-	# 		return None
+		if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
+			log_error("Error: ...receive_mid() blank midi message received.")
+			return None
 
-	# 	#log_midi("IN", midi_bytes)
+		#log_midi("IN", midi_bytes)
 
-	# 	msg_type = midi_bytes[0] & 0xf0
-	# 	# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
+		msg_type = midi_bytes[0] & 0xf0
+		# 1111 0000 is going to give you the top 4 bytes of mid_bytes 0.
 
-	# 	#log(f"\t----->status = {bin(status)}")
+		#log(f"\t----->status = {bin(status)}")
 
-	# 	# if it's a midi note on or midi note off.
-	# 	if msg_type in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
+		# if it's a midi note on or midi note off.
+		if msg_type in (Constants.MIDI.NOTE_ON, Constants.MIDI.NOTE_OFF):
 			
-	# 		note = midi_bytes[1]
-	# 		velocity = midi_bytes[2]
+			note = midi_bytes[1]
+			velocity = midi_bytes[2]
 			
-	# 		if note in Constants.Effect.DRUM_PADS:
-	# 			# send drum pad note to effect controller.
-	# 			self._effect_component.receive_midi_note(note, velocity)
-	# 			return None
+			if note in Constants.Effect.DRUM_PADS:
+				# send drum pad note to effect controller.
+				self._effect_component.receive_midi_note(note, velocity)
+				return None
 			
-	# 		log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
-	# 		return None
+			log_warning("unknown MIDI message %s" % str(midi_bytes))
+			return None
 
-	# 	# if it's a midi status update.
-	# 	if msg_type == Constants.MIDI.CC:
+		# if it's a midi status update.
+		if msg_type == Constants.MIDI.CC:
 			
-	# 		data1 = midi_bytes[1]
-	# 		data2 = midi_bytes[2]
+			data1 = midi_bytes[1]
+			data2 = midi_bytes[2]
 
-	# 		if data1 == Constants.MIDI.DATA1.TEMPO_MSB:
-	# 			self._tempo_msb = data2
-	# 			return
+			if data1 == Constants.MIDI.DATA1.TEMPO_MSB:
+				self._tempo_msb = data2
+				return
 
-	# 		elif data1 == Constants.MIDI.DATA1.TEMPO_LSB:
-	# 			tempo_lsb = data2
-	# 			self.song.tempo = (self._tempo_msb << 7) | tempo_lsb
-	# 			log(f"Sending midi tempo change {(self._tempo_msb << 7) | tempo_lsb}")
-	# 			return
+			elif data1 == Constants.MIDI.DATA1.TEMPO_LSB:
+				tempo_lsb = data2
+				self.song.tempo = (self._tempo_msb << 7) | tempo_lsb
+				log(f"Sending midi tempo change {(self._tempo_msb << 7) | tempo_lsb}")
+				return
 			
-	# 		log_warning("unknown MIDI message %s" % str(midi_bytes), "RemoteSL")
-	# 		return None
+			log_warning("unknown MIDI message %s" % str(midi_bytes))
+			return None
 
 
-	# 	# It's a sysex message.
-	# 	if msg_type == Constants.MIDI.SYSEX:
+		# It's a sysex message.
+		if msg_type == Constants.MIDI.SYSEX:
 			
-	# 		log(f"\t|----->Received a sysex message.")
+			log(f"\t|----->Received a sysex message.")
 
-	# 		if (    len(midi_bytes) == 13 or 
-	#    				midi_bytes[1:4] == (0, 32, 41) or
-	# 				  midi_bytes[8] == Constants.Hardware.ABLETON_PID or 
-	# 				 midi_bytes[10] == 1
-	# 			):
+			if (    len(midi_bytes) == 13 or 
+	   				midi_bytes[1:4] == (0, 32, 41) or
+					  midi_bytes[8] == Constants.Hardware.ABLETON_PID or 
+					 midi_bytes[10] == 1
+				):
 				
-	# 			log_warning(f"\t|----->message: {midi_bytes} has passed the strange tests and is being processed.")
+				log_warning(f"\t|----->message: {midi_bytes} has passed the strange tests and is being processed.")
 
-	# 			self.send_midi(MIDI.ALL_LEDS_OFF)
+				self.send_midi(MIDI.ALL_LEDS_OFF)
 				
-	# 			for component in self.components:
-	# 				component.refresh_state()
+				for component in self.components:
+					component.refresh_state()
 
-	# 			self.request_rebuild_midi_map()
+				self.request_rebuild_midi_map()
 
-	# 			return None
+				return None
 
-	# 		else:
-	# 			log_warning("Unknown SYSEX message received.")
+			else:
+				log_warning("Unknown SYSEX message received.")
 			
 
-	# 	log_warning("unknown MIDI message %s" % str(midi_bytes))
-	# 	super(RemoteSL, self).receive_midi(midi_bytes)
+		log_warning("unknown MIDI message %s" % str(midi_bytes))
+		super(RemoteSL, self).receive_midi(midi_bytes)
 
-	# 	return None
+		return None
 	
 
 	################################################################################################################
