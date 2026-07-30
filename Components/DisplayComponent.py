@@ -18,6 +18,9 @@ from ableton.v3.base import as_ascii
 
 from enum import Enum, IntEnum
 from typing import Optional, Sequence
+from dataclasses import dataclass
+
+from copy import deepcopy
 
 import sys
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
@@ -30,11 +33,13 @@ else:
 		return func
 
 from ..consts import Constants, H, SYX
-from ..RemoteSL_Logger import log, log_info, log_midi
+from ..RemoteSL_Logger import log, log_info, log_midi, log_error, log_verbose
 
 
+__all__ = ['DisplayComponent', 'ROW', 'DISPLAY']
 
 ####################################################################################################################
+
 
 
 class DISPLAY(Enum):
@@ -56,30 +61,117 @@ class ROW(IntEnum):
 
 ####################################################################################################################
 
+class _Display:
 
-def format_param(param, decimals=2) -> str:
-    if param is None:
-        return ""
-    
-    full = str(param)  # e.g., "-3.2 dB"
-    
-    # Split into number and unit
-    parts = full.rsplit(' ', 1)
-    if len(parts) == 2:
-        value_str, unit = parts
-        # Parse the numeric part, format it, then reattach the unit
-        try:
-            value = float(value_str)
-            return f"{value:.{decimals}f} {unit}"
-        except ValueError:
-            return full
-    else:
-        # No unit – just format the value
-        try:
-            value = float(full)
-            return f"{value:.{decimals}f}"
-        except ValueError:
-            return full
+	@dataclass
+	class _DisplayRow:
+		text: str = ""
+		dirty: bool = True
+		def isEmpty(self) -> bool:
+			return self.text == ""
+	
+	def __init__(self):
+		self._tl = _Display._DisplayRow()
+		self._bl = _Display._DisplayRow()
+		self._tr = _Display._DisplayRow()
+		self._br = _Display._DisplayRow()
+
+
+	def copy(self) -> '_Display':
+		return deepcopy(self)
+
+	@property
+	def dirty(self) -> bool:
+		return not all(not row.dirty for row in self.all_rows)
+
+	@property
+	def all_rows(self) -> list[_DisplayRow]:
+		return [self._DisplayRow("",False), self._tl, self._tr, self._bl, self._br]
+
+	@property
+	def left_display_rows(self) -> list[_DisplayRow]:
+		return [self._tl, self._bl]
+
+	@property
+	def right_display_rows(self) -> list[_DisplayRow]:
+		return [self._tr, self._br]
+
+	def all_rows_empty(self) -> bool:
+		return all(row.isEmpty() for row in self.all_rows)
+
+	def left_display_empty(self) -> bool:
+		return all(row.isEmpty() for row in self.left_display_rows)
+
+	def right_display_empty(self) -> bool:
+		return all(row.isEmpty() for row in self.right_display_rows)
+
+	def set_rows_clean(self, *rows) -> None:
+		for row in rows:
+			self.all_rows[row].dirty = False
+			
+	def set_all_clean(self) -> None:
+		self.set_rows_clean(ROW.TL, ROW.TR, ROW.BL, ROW.BR)
+
+	def set_all_dirty(self) -> None:
+		for row in self.all_rows:
+			row.dirty = True
+
+	def set_row_string(self, row: ROW, text: str) -> None:
+		# Cut to row length
+
+		log(f"_Display.set_row_string(row: {row}, {text}")
+
+		text = text[:H.NUM_CHARS_PER_DISPLAY_LINE]
+		# Sets a rows string and checks if matches or not.  Only sets to dirty if changed.
+		if row == ROW.TL:
+			if self._tl.text != text:
+				self._tl.text = text
+				self._tl.dirty = True
+		elif row == ROW.TR:
+			if self._tr.text != text:
+				self._tr.text = text
+				self._tr.dirty = True
+		elif row == ROW.BL:
+			if self._bl.text != text:
+				self._bl.text = text
+				self._bl.dirty = True
+		elif row == ROW.BR:
+			if self._br.text != text:
+				self._br.text = text
+				self._br.dirty = True
+
+	def clear_row(self, row: ROW):
+		self.set_row_string(row, "")
+
+
+####################################################################################################################
+
+
+def format_param(param: Optional[DeviceParameter], decimals=2) -> str:
+	"""Takes a device parameter and formats it to 2dp or as specified and keeps unit."""
+
+	if param is None:
+		return ""
+
+	full = str(param)  # e.g., "-3.2 dB"
+
+	# Split into number and unit
+	parts = full.rsplit(' ', 1)
+	if len(parts) == 2:
+		value_str, unit = parts
+		# Parse the numeric part, format it, then reattach the unit
+		try:
+			value = float(value_str)
+			return f"{value:.{decimals}f} {unit}"
+		except ValueError:
+			return full
+	else:
+		# No unit – just format the value
+		try:
+			value = float(full)
+			return f"{value:.{decimals}f}"
+		except ValueError:
+			return full
 
 
 ####################################################################################################################
@@ -87,6 +179,10 @@ def format_param(param, decimals=2) -> str:
 
 class DisplayComponent(Component):
 	"""Handle the two display strips and their associated text updates."""
+
+	# Display could be represented as 2 lines of 8 strings.
+	Str8Tup = tuple[str, str, str, str, str, str, str, str]
+	DisplayPatch = tuple[Str8Tup, Str8Tup]
 
 
 	################################################################################################################
@@ -100,25 +196,38 @@ class DisplayComponent(Component):
 		
 		self._control_surface = control_surface
 
-		self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
-		self.left_strip_parameters:  Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
-		self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
-		self.right_strip_parameters: Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+		# Initialize a blank display.  Created dirty.
+		self._currentDisplay: _Display = _Display()
 
-		self._message_popup_ticks = 0 	# How long to display a popup message for? 
+		# Memory for displaying popups.
+		self._cachedDisplay: _Display = _Display()
+		self._message_popup_ticks = -1 	# -1 means timer disabled positive is running and 0 means fire.
 
-		# looks like an unknown object and 4 lines
-		self._displayed_rows_cache = [None, [], [], [], []] # <-- Refreshed in refresh_state...
-															#   None here is to line up with row ids
+
+		# # Do you need this detail surely 4 strings would be sufficient for the display and you could format them all in advance.
+		# self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
+		# self.left_strip_parameters:  Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+		# self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
+		# self.right_strip_parameters: Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
+
 
 		#self.refresh_state()
 
-		# _dirty if anything changes this would be a simpler way of dealing with things changing or not.
-
 		log(f"<-----Returning from DisplayComponent.__init__({control_surface},{name})")
 
-
+	
 	################################################################################################################
+
+	@property
+	def _dirty(self) -> bool:
+		return self._currentDisplay.dirty
+
+	@_dirty.setter
+	def _dirty(self, newValue: bool) -> None:
+		if newValue == True:
+			self._currentDisplay.set_all_dirty()
+		else:
+			self._currentDisplay.set_all_clean()
 
 
 	@property
@@ -172,6 +281,10 @@ class DisplayComponent(Component):
 		"""Clear the hardware displays when the controller is disconnected."""
 
 		log(f"DisplayComponent.disconnect() called.")
+
+		self._currentDisplay = _Display()
+		self._cachedDisplay = _Display()
+
 		self.clear_displays()
 		self.show_offline_message()
 
@@ -181,7 +294,27 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def generate_strip_string(self, display_string: str):
+	def _generate_display_strip(self, names: list[str], parameters: Sequence[Optional[DeviceParameter]]) -> tuple[str, str]:
+
+		if len(names) != H.NUM_CONTROLS_PER_ROW or len(parameters) != H.NUM_CONTROLS_PER_ROW:
+			log_error("Wrong number of controls sent to _generate_display_strip.")
+			raise RuntimeError("Wrong number of controls sent to _generate_display_strip.")
+
+		top_line = ""
+		for name in names:
+			top_line += self._generate_strip_string(name)
+
+		bottom_line = ""
+		for param in parameters:
+			bottom_line += self._generate_strip_string(format_param(param))
+
+		return (top_line, bottom_line)
+		
+
+
+	################################################################################################################
+
+	def _generate_strip_string(self, display_string: str) -> str:
 		"""Create a padded display string for a single strip."""
 
 		# Blank returns all spaces basically.
@@ -203,6 +336,12 @@ class DisplayComponent(Component):
 		return display_string[:Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP].ljust(Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP)
 
 
+	################################################################################################################
+
+
+	def _is_timed_message_being_displayed(self) -> bool: 
+		return self._message_popup_ticks != -1
+
 
 	################################################################################################################
 
@@ -212,7 +351,8 @@ class DisplayComponent(Component):
 		"""Reset the cached display state for the rows."""
 
 		log("DisplayComponent.refresh_state() called.")
-		self._displayed_rows_cache = [None, [], [], [], []] # <------ Resets this object.
+		# ? is this even called???
+		raise RuntimeError("DisplayComponent.refresh_state was called.")
 		log("<-----Returning from DisplayComponent.refresh_state().")
 
 
@@ -220,7 +360,7 @@ class DisplayComponent(Component):
 
 
 	def _send_display_string(self, message: str, row: ROW, offset:int = 0):
-		"""Send a formatted display string to the hardware."""
+		"""This is the function that sends a fully formatted string to the hardware."""
 
 		final_message = " " * offset + message # add the offset to the string.
 
@@ -238,37 +378,43 @@ class DisplayComponent(Component):
 
 		full_syx_msg = SYX.BEG_SYX + SYX.CMD.LCD_TEXT + SYX.SUB_CMD.TXT.CURS_ADDR + (sysex_pos) + SYX.SUB_CMD.TXT.TEXT_STRING + sysex_text + SYX.END_MSG
 
-		if self._displayed_rows_cache[row] != full_syx_msg:
+		#if self._displayed_rows_cache[row] != full_syx_msg:
 
-			log_midi(f"\t|----->Str to display: ", full_syx_msg)
-			self._displayed_rows_cache[row] = full_syx_msg
-			self.control_surface.send_midi(full_syx_msg)
+		log_midi(f"\t|----->Str to display: ", full_syx_msg)
+
+		#self._displayed_rows_cache[row] = full_syx_msg
+		self.control_surface.send_midi(full_syx_msg)
+
+
+	################################################################################################################
+
+
+	def setup_display_for_params(self, display: DISPLAY, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
+		"""Here we generate strings for showing parameters on the left display"""
+
+		display_to_set = self._cachedDisplay if self._is_timed_message_being_displayed() else self._currentDisplay
+
+		log(f"DisplayComponent.setup_display_for_params({display}, {names}, {parameters} called.)")
+
+		rows = self._generate_display_strip(names, parameters)
+		display_to_set.set_row_string(ROW.TL if display == DISPLAY.LEFT else ROW.TR, rows[0])
+		display_to_set.set_row_string(ROW.BL if display == DISPLAY.LEFT else ROW.BR, rows[1])
 
 
 	################################################################################################################
 
 
-	def setup_left_display(self, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
-		"""Store the names and parameter labels shown on the left display."""
-
-		self.left_strip_names = names
-		self.left_strip_parameters = parameters
-
-
-	################################################################################################################
-
-	def setup_right_display(self, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
-		"""Store the names and parameter labels shown on the right display."""
-
-		self.right_strip_names = names
-		self.right_strip_parameters = parameters
-
+	def show_button_controls_list(self, controls_top: tuple[str,str,str,str,str,str,str,str], display: DISPLAY):
+		"""Show a list of controls over 2 lines """
+		# TODO: Rename to setup_display_for_controls and write a function to make a line of 2 row controls
+		raise NotImplementedError()
 
 	################################################################################################################
 
 
 	def show_offline_message(self):
-		self.write_full_row_string_centred("Ableton is OFFLINE", ROW.TL, ROW.TR)
+		"""Show the Ableton is OFFLINE message."""
+		self.write_centred_display_rows("Ableton is OFFLINE", ROW.TL, ROW.TR)
 
 
 	################################################################################################################
@@ -278,29 +424,45 @@ class DisplayComponent(Component):
 		"""Public endpoint to cleanly show a fluid, full-row message on a strict hardware hold timer."""
 
 		log_info(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
-		
+
+		# TODO: At some point you need to work out what happens when 1 timed message overwrites another...????
+		#  		probably you want to queue them but keep the original display.
+
 		# Convert seconds to clock frames (update_display runs roughly 5 times a second)
-		self._message_popup_ticks = int(duration_seconds * 5)
 
 		if not rows:
 			rows = (ROW.TL,)
+
+		# only cache if not cached already.
+		if not self._is_timed_message_being_displayed():
+			self._cachedDisplay = self._currentDisplay.copy()
+			self._cachedDisplay.set_all_dirty()
+
+		# We need to be able to override the current popup so we disable the timer.
+		# This means write rows will write to the current display instead of the cached.
+		if self._is_timed_message_being_displayed():
+			self._message_popup_ticks = -1 
 		
 		if not centred:
-			self.write_full_row_string(message_text, *rows)
+			self.write_display_rows(message_text, *rows)
 		else:
-			self.write_full_row_string_centred(message_text, *rows)
+			self.write_centred_display_rows(message_text, *rows)
+
+		# Now we set the timer.
+		self._message_popup_ticks = int(duration_seconds * 5)
+		display = self._currentDisplay
 
 		# Convoluted way to clear other row of display used for message if it's not also used for the message.
 		for row in ROW:
 			if row not in rows:
 				if row == ROW.TL and ROW.BL in rows:
-					self.clear_display_row(ROW.TL)
+					display.clear_row(ROW.TL)
 				elif row == ROW.TR and ROW.BR in rows:
-					self.clear_display_row(ROW.TR)
+					display.clear_row(ROW.TR)
 				elif row == ROW.BL and ROW.TL in rows:
-					self.clear_display_row(ROW.BL)
+					display.clear_row(ROW.BL)
 				elif row == ROW.BR and ROW.TR in rows:
-					self.clear_display_row(ROW.BR)
+					display.clear_row(ROW.BR)
 
 
 	################################################################################################################
@@ -312,116 +474,106 @@ class DisplayComponent(Component):
 
 		super().update()
 
-		# --- THE CENTRAL NOTIFICATION TIMER GATE ---
-		# This deals with displaying a timed message to the screen.
-
+		# Tick the timer and check if expired.
 		# -1 is off... 0 is end of timer.
 		if (self._message_popup_ticks > -1):
 			self._message_popup_ticks -= 1
 			
-		# The exact frame tick the 2 seconds expire, clear the local row string cache mirror
-		# to natively trick the loop below into rebuilding your fresh parameters view!
 		if self._message_popup_ticks == 0:
 			log("DISPLAY ENGINE: Hold timer expired. Releasing screen back to layout matrix.")
-			
-			# Target the name-mangled private mirror storage dictionary
-			# and fill it with blank strings so the redraw validation check triggers instantly
+			self._currentDisplay = self._cachedDisplay.copy()
+			self._dirty = True
+
+		# actually we want to display it.
+		# elif self._message_popup_ticks > 0:
+		# 	# Keep the screen completely frozen during the active countdown hold
+		# 	return None
+
+		if self._dirty:
+
+			if self._currentDisplay.all_rows_empty():
+				self.clear_displays()
+				self._currentDisplay.set_all_clean()
+
+			elif self._currentDisplay.left_display_empty():
+				self.clear_display(DISPLAY.LEFT)
+				self._currentDisplay.set_rows_clean(ROW.TL, ROW.BL)
+
+			elif self._currentDisplay.right_display_empty():
+				self.clear_display(DISPLAY.RIGHT)
+				self._currentDisplay.set_rows_clean(ROW.TL, ROW.BL)
+				
+			else:
+
+				for row in ROW:
+
+					current_row = self._currentDisplay.all_rows[row]
+
+					log(f"Writing row: {current_row}")
+
+					if current_row.dirty == True:
+						self._send_display_string(current_row.text, row, offset=0)
 						
-			# not sure what we are doing here....
-			for row_key in (1, 2, 3, 4):
-				self._displayed_rows_cache[row_key] = ""
-					
-		elif self._message_popup_ticks > 0:
-			# Keep the screen completely frozen during the active countdown hold
-			return None
-
-		# --------------------------------------------
-
-		# rows are top_left, top_right, bottom_left, bottom_right
-		for row in ROW:
-
-			message_string = ""
-
-			if row in (ROW.TL, ROW.TR):
-
-				# Get the names for either left display or right display.
-				if row == ROW.TL:
-					strip_names = self.left_strip_names
-				else:
-					strip_names = self.right_strip_names
-					
-				# --- FIX: SINGLE-LINE TEXT PASS-THROUGH GUARD ---
-				# If we receive exactly 1 long fluid text string instead of 8 column blocks
-				if len(strip_names) == 1:
-					message_string = strip_names[0]
-					self.write_full_row_string(message_string, row)
-					continue
-				# ------------------------------------------------
-					
-				#if len(strip_names) == Constants.Hardware.NUM_CONTROLS_PER_ROW:
-				for name in strip_names:
-					message_string += self.generate_strip_string(name)
-				#else:
-				#	log(f"Error: {__name__}.{__class__}.update() length of strip_names is wrong.")
-				#	raise Exception(f"Error: {__name__}.{__class__}.update() length of strip_names is wrong.")
-				#	message_string = self.generate_strip_string("") * Constants.Hardware.NUM_CONTROLS_PER_ROW # just blanks.
-
-				self.write_full_row_string(message_string, row)
-				continue
-
-			if row in (ROW.BL, ROW.BR):
-
-				# Get the parameters for either left or right.
-				if row == ROW.BL:
-					parameters = self.left_strip_parameters
-				else:
-					parameters = self.right_strip_parameters
-
-				# Look for whole strings.
-				if len(parameters) == 1:
-					message_string = parameters[0]
-					self.write_full_row_string(str(message_string) if message_string else "", row)
-					continue
-
-				# Generate the strip strings.
-				for parameter in parameters:
-
-					message_string += self.generate_strip_string(format_param(parameter))
-
-				self.write_full_row_string(message_string, row)
+			self._dirty = False
 
 
 	################################################################################################################
 
 
-	def write_full_row_string(self, text: str, *rows: ROW):
-		"""Public endpoint to print a continuous, perfectly spaced phrase across a full row."""
+	def update_parameter(self, index_of_parameter: int, parameter: DeviceParameter):
 
-		#log(f"DisplayComponent.write_full_row_string(\"{text}\", {rows if rows else ""}) called.")
-		# Called on every cycle.
+		log(f"DisplayComponent.updateParameter({index_of_parameter}, {parameter}) called.")
+
+		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
+
+		line = display_to_modify.right_display_rows[1].text
+		if line == "":
+			line = " " * H.NUM_CHARS_PER_DISPLAY_LINE
+
+		log(f"\"{line}\"")
+			
+		strip = self._generate_strip_string(format_param(parameter))
+
+		new_strips = line[:index_of_parameter * H.NUM_CHARS_PER_DISPLAY_STRIP] + strip + line[(index_of_parameter + 1) * H.NUM_CHARS_PER_DISPLAY_STRIP:]
+
+		display_to_modify.set_row_string(ROW.BR, new_strips)
+		
+
+	################################################################################################################
+
+
+	def write_display_rows(self, text: str, *rows: ROW):
+		"""Updates the display string in memory.  Write happens on update."""
+
+		log_verbose(f"DisplayComponent.write_display_rows(\"{text}\", {rows if rows else ''}) called.")
+		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
+
+		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
 
 		if not rows:
 			rows = (ROW.TL,)
 
-		# Safely pass the text string down to the internal private Sysex compiler
 		for row in rows:
-			self._send_display_string(text, row, offset=0)
+			display_to_modify.set_row_string(row, text)
 
 
 	################################################################################################################
 
 
-	def write_full_row_string_centred(self, text: str, *rows: ROW):
+	def write_centred_display_rows(self, text: str, *rows: ROW):
+		"""Updates the display string in memory. Write happens on update."""
 
-		#log(f"DisplayComponent.write_full_row_string_centred(\"{text}\", {rows if rows else ""}) called.")
-		# Called on every cycle.
+		log_verbose(f"DisplayComponent.write_centred_display_rows(\"{text}\", {rows if rows else ''}) called.")
+
+		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
 
 		if len(rows) == 0:
 			rows = (ROW.TL,)
 
-		centred = text.center(Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE)
-
-		self.write_full_row_string(centred, *rows)
+		for row in rows:
+			display_to_modify.set_row_string(row, text.center(Constants.Hardware.NUM_CHARS_PER_DISPLAY_LINE))
 
 
 	################################################################################################################
