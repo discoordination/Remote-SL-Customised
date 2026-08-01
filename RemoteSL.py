@@ -60,11 +60,12 @@ class RemoteSL(ControlSurface):
 		log_info("RemoteSL.__init__() called.")
 
 		super(RemoteSL, self).__init__(c_instance)
+		self.set_enabled(False)
 
 		self._handle = c_instance.handle() # <--- Remove when fully upgraded
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
-		self._update_hardware_delay = -1 # -1 is an initalizer???
+		#self._update_hardware_delay = -1 # -1 is an initalizer??? <---- Not used now.
 
 		self._device_appointer = DeviceAppointer(
 			song=(self.song),
@@ -77,7 +78,7 @@ class RemoteSL(ControlSurface):
 
 		with self.component_guard():
 
-			self._sysex_receiver: SysexElement = SysexElement(sysex_identifier=SYX.RECEIVE_SYSEX_HEADER) #SYX._.START + SYX._.MAN_ID)
+			self._sysex_receiver: SysexElement = SysexElement(sysex_identifier=SYX.RECEIVE_SYSEX_HEADER)
 			self._sysex_receiver.add_value_listener(self._on_sysex_received)
 			
 			log_verbose("\t|----->Building DisplayComponent...")
@@ -88,27 +89,21 @@ class RemoteSL(ControlSurface):
 
 			log_verbose("\t|----->Building MixerController...")
 			self._mixer_component = MixerComponent(self)
-
+			
 			log_verbose("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
 
 			self._create_controls()
-			self._add_control_listeners()
+			self._add_listeners()
 
 			# Listener to detect new track pressed.
 			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
 			self.song.add_tempo_listener(self._on_tempo_changed)
 
 
-		for component in self.components:
-			component.set_enabled(True)
-			#self._register_component
-
-
-		# Only show message after initialization complete as it relies on c_instance...
+		self.enable()
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
-		# self._display_component.show_timed_message("Welcome to RemoteSL Customized", 5.0, True, ROW.TL)
-		# self._display_component.show_timed_message("discoordinated by Will W", 5.0, True, ROW.TR) 
+
 
 		# Do some quick checks.
 		if self._enabled == False:
@@ -120,13 +115,10 @@ class RemoteSL(ControlSurface):
 			raise ValueError(f"Error: num components is {len(self._components)} when it should be 4.")
 
 		for comp in self.components:
-			log(comp)
+			log_verbose(f"{comp.name}  is_enabled: {comp.is_enabled()}  is_explicit_enabled: {comp.is_enabled(True)}")
+	
 			#if comp._enabled == False:
 			#	raise ValueError(f"Error: Object {comp} is not enabled when it should be.")
-
-		# generate_stub(Live.Track, "./Track.pyi")
-		# generate_stub(ControlSurface, "./ControlSurface.pyi")
-		#self.set_enabled(True)
 
 		log_verbose("<-----Returning from RemoteSL.__init__().")
 
@@ -134,7 +126,7 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
-	def _add_control_listeners(self):
+	def _add_listeners(self):
 
 		for i in range(8):
 			self._drumPad_buttons[i].add_value_listener(self._on_drum_pad_action, identify_sender = True)
@@ -149,7 +141,10 @@ class RemoteSL(ControlSurface):
 	@override
 	def build_midi_map(self, midi_map_handle: int):
 		"""Build the MIDI mappings for all controller components."""
-		
+
+		if not self.is_enabled():
+			return
+
 		log_info(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
 
 		try:
@@ -254,6 +249,42 @@ class RemoteSL(ControlSurface):
 
 
 	################################################################################################################
+	
+	
+	def disable(self):
+		"""Disables the device hence also disabling all components."""
+
+		log_info("RemoteSL.disable() called.")
+
+		self.send_midi(SYX.GOODBYE)
+
+		# Setting self to false is sufficient to switch off all other components.
+		self.set_enabled(False)
+		for component in self.components:
+			component.set_enabled(False)
+
+
+		for component in self.components:
+			log(f"{component.name} enabled {component.is_enabled()}")
+
+
+	################################################################################################################
+
+
+	def enable(self):
+		"""Enables the device"""
+
+		log_info("RemoteSL.enable() called.")
+
+		self.set_enabled(True)
+		#self.refresh_state() # <---- Do i need to do this?
+
+
+		for component in self.components:
+			component.set_enabled(True)
+		
+
+	################################################################################################################
 
 
 	@override
@@ -267,12 +298,10 @@ class RemoteSL(ControlSurface):
 		self._device_appointer.disconnect()
 		self._remove_control_listeners()
 
-		for component in self.components:
-			component.set_enabled(False)
-
-
 		self.send_midi(MIDI.ALL_LEDS_OFF)
+
 		super(RemoteSL, self).disconnect()
+
 		self.send_midi(Constants.SysEx.GOODBYE) # After super so it's done after clear screen.
 
 		#-------------------------------------------------------------------------
@@ -319,13 +348,20 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
+	def is_enabled(self):
+		return self._enabled
+
+
+	################################################################################################################
+
+
 	# I believe this is unused.  Also without underscore it shadows an inherited function.
 	@override
 	def lock_to_device(self, device):
+		"""Lock the effect controller to the given device."""
 		
 		log_info(f"RemoteSL._lock_to_device({device}) called.")
 
-		"""Lock the effect controller to the given device."""
 		super(RemoteSL, self).lock_to_device(device)
 		self._effect_component._lock_to_device(device)
 
@@ -335,7 +371,7 @@ class RemoteSL(ControlSurface):
 
 	def _on_appointed_device_changed(self, device):
 		"""Native callback fired by DeviceAppointer when track focus shifts."""
-
+		pass
 		log_info(f"RemoteSL._on_appointed_device_changed({device}) called.", LogCategory.LISTENER)
 		log_listener_callback(None, device)
 		log(f"\t|----->REMOTE SL APPCON: DeviceAppointer passed device -> {str(device)}")
@@ -367,28 +403,34 @@ class RemoteSL(ControlSurface):
 
 
 	def _on_sysex_received(self, message_data):
+
 		log_info(f"RemoteSL._on_sysex_received({message_data}) called.", category=LogCategory.LISTENER)
 
-		template = message_data[0]
-		_ = message_data[1] # This is the blank.
-		data0 = message_data[2] # the command type.
+		# The length of data is partially decided by the sysex filter string setup in the listener.
+		# Everything in the string is disgarded and everything after is kept apart from the final byte.
+		# I receive version and beta because these may vary depending on the device.
+		if not len(message_data) == 6:
+			log_warning("Received strange sysex message so skipping.")
+			return
 
-		log_verbose(f"len(message_data): {len(message_data)}.  data0: {data0}")
-		log_verbose(f"Is statement truthy: {len(message_data) == 4 and (data0,) == SYX.CMD.START_END}")
+		version = message_data[0]
+		beta = message_data[1]
+		template = message_data[2]
+		_ = message_data[3] # This is the blank.
+		cmd = message_data[4] # the command type.
+		data = message_data[5] # the value leaving or coming.
 
-		if len(message_data) == 4 and data0 == SYX.CMD.START_END[0]: # A start/end command.
+		if template == SYX.TEMPL.ABLTN[0]:
 
-			log_verbose("got to point A.")
+			if cmd == SYX.CMD.START_END[0]: # A start/end command.
 
-			data1 = message_data[3] # the value leaving or coming.
-
-			if template == SYX.TEMPL.ABLTN[0]: # Our template.
-				log_verbose("Got to point B")
-				if data1 == 1:
-					self.update_hardware()
+				if data == 1:
+					log_verbose("Returning to ableton template. Enabling.")
+					self.enable()
+		
 				else:
-					log_verbose("disconnecting.")
-					self.disconnect()
+					log_verbose("Template change sysex message detected. Disabling.")
+					self.disable()
 				
 		   
 	################################################################################################################
@@ -426,12 +468,16 @@ class RemoteSL(ControlSurface):
 	def refresh_state(self):
 		"""Trigger a refresh of the controller hardware state."""
 
+		if not self.is_enabled():
+			return
+		
 		log_info("*->RemoteSL.refresh_state() called.")
+		#self.schedule_message(4, self.update_hardware)
+		#self.send_midi(Constants.SysEx.WELCOME) <--- Done in enable
 
-		self._update_hardware_delay = 5
+		super(RemoteSL, self).refresh_state() # don't call this now as it requires update().
 
 		log_verbose("<-----Returning from RemoteSL.refresh_state().")
-		#super(RemoteSL, self).refresh_state() # don't call this now as it requires update().
 
 
 	################################################################################################################
@@ -440,6 +486,9 @@ class RemoteSL(ControlSurface):
 	@override
 	def request_rebuild_midi_map(self):
 		"""Request that Live rebuild the current MIDI map."""
+
+		if not self.is_enabled():
+			return
 
 		log("RemoteSL.request_rebuild_midi_map() called.")
 		super(RemoteSL, self).request_rebuild_midi_map()
@@ -482,25 +531,9 @@ class RemoteSL(ControlSurface):
 				bad = True
 
 		if bad:
-			log_error(f"Error: bad MIDI message sent: {midi_event_bytes}")
+			log_error(f"Bad MIDI message sent: {midi_event_bytes}")
 		
 		self._send_midi(midi_event_bytes)
-
-
-	################################################################################################################
-
-
-	# def show_message(self, message):
-	# 	"""Display a message in Live's UI."""
-	# 	self._c_instance.show_message(message)
-
-
-	################################################################################################################
-
-
-	# def song(self):
-	# 	"""Expose the Live song object."""
-	# 	return self._c_instance.song()
 
 
 	################################################################################################################
@@ -526,7 +559,6 @@ class RemoteSL(ControlSurface):
 			return MidiMap.MapMode.relative_smooth_signed_bit
 		return MidiMap.MapMode.absolute
 	
-
 
 	################################################################################################################
 
@@ -564,8 +596,13 @@ class RemoteSL(ControlSurface):
 
 	@override
 	def update(self):
+
+		if not self.is_enabled():
+			return
+		
 		log_info("*->RemoteSL.update() called.")
-		super().update()
+
+		super().update() # <--- Calls all other updates.
 
 
 	################################################################################################################
@@ -573,43 +610,20 @@ class RemoteSL(ControlSurface):
 
 	@override
 	def update_display(self):
-		"""Update the display and decrement the hardware refresh timer."""
+		"""Update the display and decrement the hardware refresh timer. Called on a timer by the ableton engine."""
 
-		#log(f"RemoteSL.update_display() called.") <---- not logged as on a timer.
+		# No ticks sent when disabled.
+		if not self.is_enabled():
+			return
+
+		log(f"RemoteSL.update_display() called.")
+
+		# So any component that has an update_tick method registers for regular ticks!
+		for component in self.components:
+			if hasattr(component, 'update_tick'):
+				component.update_tick()
+
 		super().update_display()
-
-		if self._update_hardware_delay > 0:		# <---- somehwere there is a timer tick for this
-			self._update_hardware_delay -= 1
-			if self._update_hardware_delay == 0:
-				self.update_hardware()
-				self._display_component.show_timed_message("Welcome to RemoteSL Customized", 6.0, True, ROW.TL)
-				self._display_component.show_timed_message("discoordinated by Will W", 6.0, True, ROW.TR) 
-
-
-		for component in self.components:
-			component.update()
-
-
-	################################################################################################################
-
-
-	def update_hardware(self):
-		"""Initialise the hardware and refresh each controller component."""
-
-		log_info("RemoteSL.update_hardware() called.")
-
-		self.send_midi(Constants.SysEx.WELCOME)
-
-		#self.refresh_state() # can't call this as it's a loop.
-		
-		for component in self.components:
-			#TODO: Review if refresh state is necessary or a good idea.	
-			if hasattr(component, "refresh_state"): # to check as i don't know if all have refresh state.
-				pass
-				#component.refresh_state()
-
-		# If you were regularly to call this function then you would need to reset the timer here.
-		# Correction the update hardware timer is called in refresh_state() and is set to 5.
 
 
 
@@ -650,6 +664,8 @@ class RemoteSL(ControlSurface):
 
 		log_warning("=== receive_midi CALLED ===")  # ← THIS WILL TELL YOU IF IT'S BEING CALLED
 		log_midi("IN", midi_bytes)
+
+		return
 
 		if not midi_bytes: # Why??? Does this ever happen?  Should i remove this line.
 			log_error("Error: ...receive_mid() blank midi message received.")

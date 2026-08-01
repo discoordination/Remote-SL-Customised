@@ -64,38 +64,56 @@ from ..tracker import TrackedMixin
 ####################################################################################################################
 
 
-
-
 class EffectComponent(Component, TrackedMixin):
 	"""Handle effect-device selection, bank navigation, and parameter mapping."""
+
+
+	################################################################################################################
+
+	_control_surface           : RemoteSL
+	_display_component         : DisplayComponent
+
+	# ------------- Controls ----------------
+	_btn_page_up               : ButtonElement
+	_btn_page_down             : ButtonElement
+	_btn_sel_encoders          : ButtonElement
+	_btn_sel_top_btns          : ButtonElement
+	_btn_sel_pots 	           : ButtonElement
+	_btn_sel_btm_btns          : ButtonElement
+	#._btn_sel_dpads	   : ButtonElement
+	
+	_buttons_upper_row         : list[ButtonElement]
+	_buttons_bottom_row        : list[ButtonElement]
+
+	# --------------------------------------
+
+	_assigned_device           : Device | None
+	_assigned_device_is_locked : bool
+	_bank					   : int
+	_blank_prompt_is_drawn     : bool
+	_current_display_row       : str
+	_display_page_index        : int
+	_last_lock_press_time      : float
+	_last_selected_track       : Track | None
+	#_lock_popup_ticks          : int
+	_show_bank                 : bool
+	_strips                    : list[EffectChannelStrip]
+
+
+	################################################################################################################
+
 
 	def __init__(self, control_surface: RemoteSL, name: str = 'EffectComponent', *a, **k) -> None:
 		"""Initialise the controller state for the effect section."""
 
 		log_info(f"EffectComponent.__init__({control_surface}, {name}) called.")
 
-		super().__init__(name = name, song = control_surface.song, *a, **k)
+		super().__init__(name = name, song = control_surface.song, is_enabled=False, *a, **k)
 
-
-		self._control_surface: RemoteSL = control_surface # ref. to the owning RemoteSL object.
-		self._display_component: DisplayComponent = control_surface._display_component # ref. to the display.
-
-		# ------------- Controls ----------------
-		self._btn_page_up      : ButtonElement
-		self._btn_page_down    : ButtonElement
-		self._btn_sel_encoders : ButtonElement
-		self._btn_sel_top_btns : ButtonElement
-		self._btn_sel_pots 	   : ButtonElement
-		self._btn_sel_btm_btns : ButtonElement
-		#self._btn_sel_dpads	   : ButtonElement
-		
-		self._buttons_upper_row  : list[ButtonElement]
-		self._buttons_bottom_row : list[ButtonElement]
-
-		# --------------------------------------
+		self._control_surface = control_surface # ref. to the owning RemoteSL object.
+		self._display_component = control_surface._display_component # ref. to the display.
 
 		self._create_controls()
-		self._add_control_listeners()
 		
 		self._last_selected_track = None
 		self._blank_prompt_is_drawn = False
@@ -103,24 +121,18 @@ class EffectComponent(Component, TrackedMixin):
 		# --- DYNAMIC DISPLAY STATE TRACKING ---
 		self._current_display_row = "pots" # Defaults to pots on startup
 
-		self._assigned_device_is_locked : bool = False
+		self._assigned_device_is_locked = False
 		self._assigned_device = None
-		self._bank : int = 0
-		self._display_page_index : int = 0
-		self._show_bank : bool = False
+		self._bank = 0
+		self._display_page_index = 0
+		self._show_bank = False
 
-		self._lock_popup_ticks : int = 0
+		#self._lock_popup_ticks = 0
 
 		# 1. Create the 16 strips in memory FIRST
-		self._strips : list[EffectChannelStrip] = [EffectChannelStrip(self) for _ in range(16)]
+		self._strips = [EffectChannelStrip(self) for _ in range(16)]
 		
-		# 2. Trigger the dynamic functions LAST once all data structures exist
 		self._change_assigned_device(self.song.appointed_device)
-
-		self.song.add_appointed_device_listener(self._on_appointed_device_changed)
-		self.song.add_tracks_listener(self._on_tracks_changed)
-		self.song.add_visible_tracks_listener(self._on_visible_tracks_changed)
-
 		#self.reassign_strips() is called in change_assigned_device
 
 		log("<-----Returning from EffectComponent.__init__().")
@@ -135,19 +147,17 @@ class EffectComponent(Component, TrackedMixin):
 		assert s is not None
 		return s
 
-	################################################################################################################
-
-	def on_enabled(self):
-		log_warning("on_enabled was actually called.")
-
-	def on_disabled(self):
-		log_warning("on_disabled was actually called.")
-
 
 	################################################################################################################
 
+	@property
+	def control_surface(self) -> RemoteSL:
+		return self._control_surface
 
-	def _add_control_listeners(self):
+	################################################################################################################
+
+
+	def _add_listeners(self) -> None:
 
 		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)     
 		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
@@ -158,6 +168,10 @@ class EffectComponent(Component, TrackedMixin):
 
 		[button.add_value_listener(self._on_top_row_button_pressed, identify_sender = True) for button in self._buttons_upper_row]
 		[button.add_value_listener(self._on_btm_row_button_pressed, identify_sender = True) for button in self._buttons_bottom_row]
+
+		self.song.add_appointed_device_listener(self._on_appointed_device_changed)
+		self.song.add_tracks_listener(self._on_tracks_changed)  #FIXME: Remove if not needed.
+		self.song.add_visible_tracks_listener(self._on_visible_tracks_changed) #FIXME: Remove if not needed.
 
 
 	################################################################################################################
@@ -200,26 +214,9 @@ class EffectComponent(Component, TrackedMixin):
 					map_mode,
 					False, # needs_takeover
 				)
-				continue
 			
 			else:
 				log_assignment(strip_index, primary_cc_no, "None")
-
-			
-		# --- FIX: THE ABSOLUTE REBUILD TEXT SYNC GATE ---
-		# Ableton just ran its mapping sweeps! Force our layout text processor to re-slice 
-		# the fresh parameter names and push them straight into the display variables!
-		# We set force_rebuild=False so it only refreshes the text names behind the scene 
-		# without triggering a recursive C++ mapping loop.
-		log("\t|----->MAPPING REBUILD: Now calling reassign strips...")
-		self.reassign_strips(force_rebuild=False)
-		# ------------------------------------------------
-
-		# for cc_no in fx_forwarded_ccs:
-		# 	Live.MidiMap.forward_midi_cc(self._parent.handle(), midi_map_handle, SL_MIDI_CHANNEL, cc_no)
-
-		# for note in Constants.Effect.DRUM_PAD_ROW:
-		# 	Live.MidiMap.forward_midi_note(self._parent.handle() , midi_map_handle, MIDI.SL_CHANNEL, note)
 
 		log_info(f"<-----Returning from EffectComponent.build_midi_map({midi_map_handle}).")
 
@@ -245,7 +242,8 @@ class EffectComponent(Component, TrackedMixin):
 		self._current_display_row = "pots"
 		
 		# Force a single rebuild of the layouts safely (force_rebuild=True maps MIDI)
-		self.reassign_strips(force_rebuild=True)
+		self.reassign_strips()
+		self.control_surface.request_rebuild_midi_map()
 
 		log_info("<-----Returning from EffectComponent.change_assigned_device().")
 
@@ -253,7 +251,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _create_controls(self):
+	def _create_controls(self) -> None:
 		
 		self._btn_page_up      = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.PAGE_UP)
 		self._btn_page_down    = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, FX.PAGE_DOWN)
@@ -276,30 +274,26 @@ class EffectComponent(Component, TrackedMixin):
 
 		log_info("EffectComponent.disconnect() called")
 
-		self._change_assigned_device(None)
-		self._remove_control_listeners()
-
-		self.song.remove_appointed_device_listener(self._on_appointed_device_changed)
-		self.song.remove_tracks_listener(self._on_tracks_changed)
-		self.song.remove_visible_tracks_listener(self._on_visible_tracks_changed)
+		if self.is_enabled():
+			self._change_assigned_device(None)
+			self._remove_listeners()
 
 
 	################################################################################################################
 
 
 	def _get_num_parameter_banks(self) -> int:
+		"""Get the number of banks required to display all the parameters in banks."""
 		
 		log_info("EffectComponent._get_num_parameter_banks() called.")
-
-		result = 0
 
 		if self._assigned_device is not None:
 			param_count = len(self._assigned_device.parameters)
 			
 			# Use double-slash '//' for clean integer floor division
-			result = (param_count // 8) + int(param_count % 8 != 0)
+			return (param_count // 8) + int(param_count % 8 != 0)
 		
-		return result
+		return 0 # No device no banks.
 
 
 	################################################################################################################
@@ -354,13 +348,17 @@ class EffectComponent(Component, TrackedMixin):
 
 		if device:
 			self._assigned_device_is_locked = True
-			self._update_select_row_leds()
+			self.control_surface.toggle_lock()
+			self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
+			self._update_select_row_leds() # Could be more efficient and just update 1.
+
 
 
 	################################################################################################################
 
 
-	def _on_appointed_device_changed(self): #, device: Optional[Device]):
+	def _on_appointed_device_changed(self) -> None:
+		"""Callback for changing the appointed device."""
 
 		log_info("EffectComponent._on_appointed_device_change() called.")
 		log_listener_callback()
@@ -371,7 +369,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _on_btn_page_up_pressed(self, value):
+	def _on_btn_page_up_pressed(self, value) -> None:
 
 		log_listener_callback(value)
 
@@ -383,7 +381,9 @@ class EffectComponent(Component, TrackedMixin):
 			total_pages = len(device_parameters) + 7 // 8
 
 			if self._display_page_index + 1 < total_pages:
+
 				self._display_page_index += 1
+
 				log(f"PAGE BUTTON: Pressed Up. Virtual Display Page is now -> {self._display_page_index}")
 				
 				# Math Rule: A hard MIDI map layout rewrite is required only when entering an EVEN page index!
@@ -392,22 +392,24 @@ class EffectComponent(Component, TrackedMixin):
 				if self._display_page_index % 2 == 0:
 					self._bank += 1
 					self._current_display_row = "pots"
-					self.reassign_strips(force_rebuild=True) # Full C++ MIDI map rebuild
+					self.reassign_strips() # Full C++ MIDI map rebuild
+					self.control_surface.request_rebuild_midi_map()
 				else:
 					self._current_display_row = "encoders"
-					self.reassign_strips(force_rebuild=False) # TEXT SWAP ONLY, lightning fast
+					self.reassign_strips() # TEXT SWAP ONLY, lightning fast
 
 
 	################################################################################################################
 	
 	
-	def _on_btn_page_down_pressed(self, value):
+	def _on_btn_page_down_pressed(self, value) -> None:
 		
 		log_listener_callback(value)
 
 		if value and self._assigned_device is not None:
 
 			if self._display_page_index > 0:
+				
 				self._display_page_index -= 1
 				log(f"PAGE BUTTON: Pressed Down. Virtual Display Page is now -> {self._display_page_index}")
 				
@@ -417,10 +419,11 @@ class EffectComponent(Component, TrackedMixin):
 				if (self._display_page_index + 1) % 2 == 0:
 					self._bank -= 1
 					self._current_display_row = "encoders"
-					self.reassign_strips(force_rebuild=True) # Full C++ MIDI map rebuild
+					self.reassign_strips() # Full C++ MIDI map rebuild
+					self.control_surface.request_rebuild_midi_map()
 				else:
 					self._current_display_row = "pots"
-					self.reassign_strips(force_rebuild=False) # TEXT SWAP ONLY, lightning fast
+					self.reassign_strips() # TEXT SWAP ONLY, lightning fast
 
 
 		
@@ -458,62 +461,21 @@ class EffectComponent(Component, TrackedMixin):
 
 		log_listener_callback(value)
 
-		if value:
-											
-			# Debounce double-broadcast hardware port packets
-			current_time = time.time()
-			if hasattr(self, '_last_lock_press_time') and (current_time - self._last_lock_press_time) < 0.1:
-				log("DEBOUNCE BLOCK: Successfully dropped physical hardware double-broadcast packet.")
-				return None
-			self._last_lock_press_time = current_time
-			
-			# 1. READ the status BEFORE changing anything
-			was_already_locked = getattr(self, '_assigned_device_is_locked', False)
+		if value:								
 			
 			log("LOCK BUTTON PRESSED: Handing toggle request to root script...")
 		
-			# 2. Fire the native toggle command in Live via the master script
-			self._control_surface.toggle_lock()
-			
-			# 3. Engage the 2-second visual hold timer (10 frame ticks)
-			self._lock_popup_ticks = 10
-			
-			# 4. Route state updates purely through your balanced helpers
-			if not was_already_locked:
+			if not self._assigned_device_is_locked:
 				log("LOCK ROUTE: Engaging lock_to_device...")
 				# This now sets the flag to True and updates select LEDs natively
 				
 				self._lock_to_device(self.song.appointed_device)
 				
-				self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
-
 			else:
 				log("LOCK ROUTE: Engaging unlock_from_device...")
-				current_device = self._assigned_device
 				
-				# 1. Turn off the hardware button LEDs natively
-				self._unlock_from_device(current_device)
+				self._unlock_from_device(self._assigned_device)
 				
-				# 2. Hard reset variables cleanly on a manual unlock
-				self._assigned_device_is_locked = False 
-				self._display_page_index = 0
-				self._current_display_row = "pots"
-				
-				# 3. Pull whatever device Ableton is focusing on right now
-				live_appointed_device = self.song.appointed_device
-				
-				# --- FIX: UPDATE THE MEMORY POINTER DIRECTLY WITHOUT CORRUPTING CACHES ---
-				# Set the internal pointer to the new instrument
-				self._assigned_device = live_appointed_device
-				
-				# Run text reassignment with force_rebuild=False so it updates the text names 
-				# array behind the scenes without triggering a destructive C++ MIDI rebuild!
-				self.reassign_strips(force_rebuild=False)
-				# ------------------------------------------------------------------------
-				
-				# 4. Flash your centralized timed message popup for exactly 2 seconds
-				self._display_component.show_timed_message("Device Unlocked", duration_seconds=2.0)
-
 
 
 	################################################################################################################
@@ -545,7 +507,27 @@ class EffectComponent(Component, TrackedMixin):
 
 	################################################################################################################
 	
+	@override
+	def on_enabled_changed(self):
+
+		log_info(f"EffectComponent.on_enabled_changed() called.  enabled={self.is_enabled()} explicit={self.is_enabled(True)}.")
+
+		if self.is_enabled():
+			# Called when component becomes active – do initial setup
+			self._add_listeners()
+			
+		else:
+			self._remove_listeners()
+
+		self.reassign_strips()
+		self.control_surface.request_rebuild_midi_map()
+
+		return super().on_enabled_changed()
+
+
+	################################################################################################################
 	
+
 	def _on_top_row_button_pressed(self, value, sender) -> None:
 
 		log_listener_callback(value, sender)
@@ -571,22 +553,32 @@ class EffectComponent(Component, TrackedMixin):
 		try:
 			track: Track = self.song.view.selected_track
 			
-			# --- ABSOLUTE EMPTY TRACK VALIDATION CHECK ---
-			# Look directly inside the track's physical device list array
 			if track is None or len(track.devices) == 0:
 				log("TRACK CHANGED LOGIC: Track has 0 physical devices. Forcing clear...")
 				self._change_assigned_device(None)
 				return None
-			# ---------------------------------------------
 
 			# If the track actually has devices, safely extract the highlighted target
-			current_device = track.view.selected_device
-			log(f"TRACK CHANGED LOGIC: Active device is now -> {str(current_device)}")
-			
-			self._change_assigned_device(current_device)
+	
+			log(f"TRACK CHANGED LOGIC: Active device is now -> {str(track.view.selected_device)}")
+		
+			self._change_assigned_device(track.view.selected_device)
 			
 		except Exception as e:
 			log_error(f"TRACK CHANGED ERROR: {str(e)}")
+
+
+	################################################################################################################
+
+
+	def _on_strip_parameter_changed(self, strip_index: int):
+		"""Called when a parameter on a strip changes."""
+
+		strip = self._strips[strip_index]
+		param = strip.assigned_parameter
+
+		if param is not None:
+			self._display_component.update_parameter(strip_index, param, ROW.BL)
 
 
 	################################################################################################################
@@ -610,10 +602,8 @@ class EffectComponent(Component, TrackedMixin):
 		
 		log_info(f"EffectComponent.reassign_strips(force_rebuild={force_rebuild}) called.")
 		
-		page_up_value = Constants.Hardware.BUTTON_RELEASED
-		page_down_value = Constants.Hardware.BUTTON_RELEASED
-		device = self._assigned_device
 
+		device = self._assigned_device
 
 		if device is not None:
 			
@@ -623,6 +613,8 @@ class EffectComponent(Component, TrackedMixin):
 			param_index = 0
 			param_names = []
 			parameters = []
+
+			# TODO: Add listener to name of parameters in case they get changed...???
 
 			for strip in self._strips:
 				
@@ -643,18 +635,8 @@ class EffectComponent(Component, TrackedMixin):
 				param_names.append(name)
 				param_index += 1
 
-			if self._bank > 0:
-				page_down_value = Constants.Hardware.BUTTON_PRESSED
-
-			if self._bank + 1 < self._get_num_parameter_banks():
-				page_up_value = Constants.Hardware.BUTTON_PRESSED
 
 			self._report_bank()
-
-			# --- FIX: DYNAMIC RE-SLICING BASED ON ACTIVE DISPLAY ROW ---
-			# Check if the tracking variable exists (or initialize it on the fly)
-			if not hasattr(self, '_current_display_row'):
-				self._current_display_row = "pots"
 
 			if self._current_display_row == "pots":
 				# Left Screen gets items 0-7 (Pots)
@@ -678,80 +660,11 @@ class EffectComponent(Component, TrackedMixin):
 			
 			no_device_msg = "Please select a Device in Live to edit it..."
 			parameters = [None for _ in range(8)]
-			
+
 			self._display_component.write_display_rows(no_device_msg, ROW.TL)
 
 
-		# Wrap this line so it only fires when explicitly requested
-		if force_rebuild:
-			self._control_surface.request_rebuild_midi_map() # <--- suspicious as rebuild_midi_map calls this some of the time.
-
-
-		# if self.support_mkII():
-		# 	log("*** ERROR *** I should not be seeing mkii code...")
-		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_DOWN, page_down_value))
-		# 	self.send_midi((self.cc_status_byte(), FX_DISPLAY_PAGE_UP, page_up_value))
-
-		# 	for cc_no in fx_upper_button_row_ccs:
-		# 		self.send_midi((self.cc_status_byte(), cc_no, CC_VAL_BUTTON_RELEASED))
-
-
 		log_info(f"<-----Returning from EffectComponent.__reassign_strips(force_rebuild={force_rebuild}).")
-
-
-	################################################################################################################
-
-
-	# def receive_midi_cc(self, cc_no: int, cc_value: int) -> None:
-	# 	"""Route incoming CC events to the correct effect-control handler."""
-
-	# 	log_info(f"EffectComponent.receive_midi_cc({cc_no}, {cc_value}) called.")
-
-	# 	# --- THE ABSOLUTE GHOST MOVEMENT KILL SWITCH ---
-	# 	# If no device is currently assigned to the controller (empty track state), 
-	# 	# completely discard all incoming knob and encoder turns at the gate!
-	# 	# This stops broken channel strip memory references from manually tweaking your old plugins.
-	# 	if self._assigned_device is None:
-	# 		log("GHOST GUARD: Discarded knob movement because track is empty.")
-	# 		return None
-		# -----------------------------------------------
-
-		# if cc_no in Constants.Effect.NAVIGATION:
-		# 	self._handle_page_up_down_ccs(cc_no, cc_value)
-		# 	return None
-		
-		# if cc_no in Constants.Effect.SELECT_BUTTONS:
-		# 	self._handle_select_button_ccs(cc_no, cc_value)
-		# 	return None
-		
-		# if cc_no in Constants.Effect.UPPER_BUTTONS:
-		# 	strip = self._strips[cc_no - Constants.Effect.UPPER_BUTTON_BASE]
-		# 	if cc_value == Constants.Hardware.BUTTON_PRESSED:
-		# 		strip.on_button_pressed()
-		# 	return None
-		
-		# if cc_no in Constants.Effect.POTS:
-		# 	# Let Live take ownership of the pot row for device-parameter mapping.
-		# 	return None
-		
-		# if cc_no in Constants.Effect.ENCODERS:
-		# 	return None
-		
-		# if cc_no in Constants.Effect.LOWER_BUTTONS:
-		# 	return None
-
-
-	################################################################################################################
-
-
-	# def receive_midi_note(self, note: int, velocity: int):
-	# 	"""Handle note events from the drum-pad row for the effect section."""
-
-	# 	log_info("EffectComponent.receive_midi_note() called.")
-	# 	if note in Constants.Effect.DRUM_PADS:
-	# 		return None
-
-	# 	return None
 
 
 	################################################################################################################
@@ -771,7 +684,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _remove_control_listeners(self):
+	def _remove_listeners(self):
 	
 		self._btn_page_up.remove_value_listener(self._on_btn_page_up_pressed)     
 		self._btn_page_down.remove_value_listener(self._on_btn_page_down_pressed)
@@ -783,6 +696,14 @@ class EffectComponent(Component, TrackedMixin):
 
 		[button.remove_value_listener(self._on_top_row_button_pressed) for button in self._buttons_upper_row]
 		[button.remove_value_listener(self._on_btm_row_button_pressed) for button in self._buttons_bottom_row]
+
+		for strip in self._strips:
+			if strip.assigned_parameter is not None:
+				strip.assigned_parameter.remove_value_listener(strip._on_parameter_value_changed)
+
+		self.song.remove_appointed_device_listener(self._on_appointed_device_changed)
+		self.song.remove_tracks_listener(self._on_tracks_changed)
+		self.song.remove_visible_tracks_listener(self._on_visible_tracks_changed)
 
 
 	################################################################################################################
@@ -800,7 +721,7 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _restore_bank(self, bank: int) -> None:
+	def restore_bank(self, bank: int) -> None:
 		
 		log_info("EffectComponent.restore_bank() called.")
 
@@ -860,9 +781,19 @@ class EffectComponent(Component, TrackedMixin):
 		if device and device == self._assigned_device:
 			
 			self._assigned_device_is_locked = False
+			self.control_surface.toggle_lock()
+
 			self._update_select_row_leds()
+			self._display_component.show_timed_message("Device Unlocked!", duration_seconds=2.0)
+
+			self._display_page_index = 0
+			self._current_display_row = "pots"
+
 			if self.song.appointed_device != self._assigned_device:
+				
+				self._assigned_device = self.song.appointed_device
 				self.reassign_strips()
+				self.control_surface.request_rebuild_midi_map()
 
 
 	################################################################################################################
@@ -870,9 +801,13 @@ class EffectComponent(Component, TrackedMixin):
 
 	@override
 	def update(self) -> None:
-		"""Fires continuously on Ableton's background frame clock to monitor device state."""
+		"""Called sometimes.."""
 
-		#log_info("EffectComponent.update() called.")
+		if not self.is_enabled():
+			return
+
+		log_verbose("EffectComponent.update() called.")
+		super().update()
 		
 		# --- FIX: THE ABSOLUTE UPDATE DISPLAY LOCK ENVELOPE ---
 		# If the controller is locked, we completely freeze the parameter tracking view!
@@ -979,11 +914,21 @@ class EffectChannelStrip(object):
 
 	################################################################################################################
 
-	def __init__(self, mixer_component):
 
-		self._mixer_component : EffectComponent = mixer_component
-		self._assigned_parameter: Optional[DeviceParameter] = None
-		self._last_value : Optional[float] = None
+	_mixer_component 	 : EffectComponent
+	_assigned_parameter  : DeviceParameter | None
+	_last_value 		 : float | None
+
+
+	################################################################################################################
+
+
+	def __init__(self, mixer_component: EffectComponent):
+
+		self._mixer_component = mixer_component
+		self._assigned_parameter = None
+		self._last_value = None
+
 
 	################################################################################################################
 
@@ -1001,28 +946,26 @@ class EffectChannelStrip(object):
 
 
 	@property
-	def assigned_parameter(self) -> Optional[DeviceParameter]:
+	def assigned_parameter(self) -> DeviceParameter | None:
 		"""Getter: Safely returns the currently bound device parameter or None."""
+
 		return self._assigned_parameter
+
+	#-------------------------------------------------------------------------------------------
 	
 	@assigned_parameter.setter
-	def assigned_parameter(self, parameter: Optional[DeviceParameter]):
+	def assigned_parameter(self, parameter: DeviceParameter | None):
 		"""Setter: Safely updates the internal parameter reference reference."""
+
+		if self._assigned_parameter is not None:
+			if self._assigned_parameter.value_has_listener(self._on_parameter_value_changed):
+				self._assigned_parameter.remove_value_listener(self._on_parameter_value_changed)
+				
 		self._assigned_parameter = parameter
 
-		# # --- Step 1: REMOVE CLEANUP ---
-		# # If this strip is already watching a parameter, kill the listener before letting go
-		# if self._assigned_parameter is not None:
-		# 	if self._assigned_parameter.value_has_listener(self._on_any_knob_moved):
-		# 		self._assigned_parameter.remove_value_listener(self._on_any_knob_moved)
-
-		# Assign the new parameter target (can be a real parameter or None)
-
-		# # --- Step 2: ATTACH NEW LISTENER ---
-		# # If the new parameter is valid, attach our localized listener hook
-		# if self._assigned_parameter is not None:
-		# 	if not self._assigned_parameter.value_has_listener(self._on_any_knob_moved):
-		# 		self._assigned_parameter.add_value_listener(self._on_any_knob_moved)
+		if parameter is not None:
+			if not parameter.value_has_listener(self._on_parameter_value_changed):
+				parameter.add_value_listener(self._on_parameter_value_changed)
 
 
 	################################################################################################################
@@ -1050,7 +993,6 @@ class EffectChannelStrip(object):
 	################################################################################################################
 
 
-
 	def on_encoder_moved(self, cc_value : int) -> None:
 		
 		log(f"EffectChannelStrip.on_encoder_moved({cc_value}) called.")
@@ -1076,6 +1018,17 @@ class EffectChannelStrip(object):
 		if hasattr(parameter, "is_quantized") and parameter.is_quantized:
 			parameter.value = round(parameter.value)
 
+
+	################################################################################################################
+
+
+	def _on_parameter_value_changed(self):
+
+		strip_index = self._mixer_component._strips.index(self)
+		self._mixer_component._on_strip_parameter_changed(strip_index)
+
+
+	################################################################################################################
 
 
 ####################################################################################################################

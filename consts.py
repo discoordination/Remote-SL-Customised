@@ -306,7 +306,7 @@ class Constants:
 		WELCOME: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x01,) + END_MSG # 01 go to ableton mode
 		GOODBYE: Final[SysexMessage] = BEG_SYX + CMD.START_END + (0x00,) + END_MSG # 00 show ableton is offline
 
-		RECEIVE_SYSEX_HEADER: Final[SysexMessage] = _.START + _.MAN_ID + _.AUTOMAP + _.VERSION + _.BETA
+		RECEIVE_SYSEX_HEADER: Final[SysexMessage] = _.START + _.MAN_ID + _.AUTOMAP # Skip version and beta here allow other models.
 
 		CLEAR_LEFT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.LEFT + END_MSG
 		CLEAR_RIGHT_DISPLAY: Final[SysexMessage] = BEG_SYX + CMD.LCD_TEXT + SUB_CMD.TXT.CLEAR.RIGHT + END_MSG

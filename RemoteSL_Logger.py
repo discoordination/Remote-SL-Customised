@@ -45,7 +45,7 @@ LOG_LISTENERS = True          # ← Toggle listener callback category
 LOG_ASSIGNMENTS = False       # ← Toggle assignment category
 
 # --- Per‑file logging control ---
-LOG_FILES = [ "EffectComponent.py" ]  # Empty = all files; add filenames to filter
+LOG_FILES = []  # Empty = all files; add filenames to filter
 #LOG_FILES = []
 
 _current_level = LOG_LEVEL
@@ -235,14 +235,14 @@ def log_info(message: str, category: Optional[LogCategory] = None):
 
 
 def log_warning(message: str, category: Optional[LogCategory] = None):
-	log(message, LogLevel.WARNING, category)
+	log("WARNING: " + message, LogLevel.WARNING, category)
 
 
 ####################################################################################################################
 
 
 def log_error(message: str, category: Optional[LogCategory] = None):
-	log(message, LogLevel.ERROR, category)
+	log("ERROR: " + message, LogLevel.ERROR, category)
 
 
 ####################################################################################################################

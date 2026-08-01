@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 from .DisplayComponent import DisplayComponent, ROW, DISPLAY
 from ..consts import SLM, MXR, Constants, H, M
-from ..RemoteSL_Logger import log, log_assignment, log_error, log_warning, log_info
+from ..RemoteSL_Logger import log, log_assignment, log_verbose, log_error, log_warning, log_info
 
 
 ####################################################################################################################
@@ -69,48 +69,52 @@ class MixerComponent(Component):
 
 	################################################################################################################
 
+	_control_surface     : RemoteSL
+	_display_component   : DisplayComponent
+
+	# ------------- Controls ----------------
+
+	_btn_page_up         : ButtonElement
+	_btn_page_down       : ButtonElement
+	_btn_sel_faders      : ButtonElement
+	_btn_sel_tbs         : ButtonElement
+	_btn_sel_bbs         : ButtonElement
+	_btns_top_row        : list[ButtonElement]
+	_btns_btm_row        : list[ButtonElement]
+	#._faders:		list[SliderElement]
+
+	# ---------------------------------------
+
+	_assigned_tracks     : list[Track] 
+	_last_send_index     : int
+	_layout_mode         : LayoutMode
+	_strips              : list[MixerChannelStrip]
+	_slider_mode		 : int
+	_strip_offset        : int
+
+
+	################################################################################################################
+
 
 	def __init__(self, control_surface: RemoteSL, name: str = 'MixerComponent', *a, **k):
 		"""Initialise the mixer controller state and display references."""
 
 		log_info(f"MixerComponent.__init__({control_surface}, {name}) called.")
 		
-		super().__init__(name=name, song=control_surface.song, *a, **k)
+		super().__init__(name=name, song=control_surface.song, is_enabled=False, *a, **k)
 
-		self._control_surface: RemoteSL = control_surface
-		self._display_component: DisplayComponent = control_surface._display_component
+		self._control_surface = control_surface
+		self._display_component = control_surface._display_component
 
-		# ------------- Controls ----------------
-
-		self._btn_page_up: 	  ButtonElement
-		self._btn_page_down:  ButtonElement
-
-		self._btn_sel_faders: ButtonElement
-		self._btn_sel_tbs:	  ButtonElement
-		self._btn_sel_bbs:	  ButtonElement
-
-		#self._faders:		list[SliderElement]
-		self._btns_top_row:	list[ButtonElement]
-		self._btns_btm_row:	list[ButtonElement]
-
-		# ---------------------------------------
-
-		self._strip_offset: int = 0
-		self._slider_mode: int = SLM.VOLUME
-		self._last_send_index: int = 0
+		self._strip_offset = 0
+		self._slider_mode = SLM.VOLUME
+		self._last_send_index = 0
 		
 		self._strips = [MixerChannelStrip(self, index) for index in range(Constants.Hardware.NUM_CONTROLS_PER_ROW)]
-		self._assigned_tracks: list[Track] = []
-		self._layout_mode: LayoutMode = LayoutMode.STANDARD
+		self._assigned_tracks = []
+		self._layout_mode = LayoutMode.STANDARD
 
 		self._create_controls()
-		self._add_control_listeners()
-
-		self.song.add_visible_tracks_listener(self._on_tracks_added_or_deleted)
-
-		self._update_selected_row_leds() # For light at start.
-		self.reassign_strips()
-		self.control_surface.request_rebuild_midi_map()
 
 		log_info(f"<-----Returning from MixerComponent.__init__({control_surface}, {name}).")
 
@@ -162,7 +166,7 @@ class MixerComponent(Component):
 	################################################################################################################
 
 
-	def _add_control_listeners(self) -> None:
+	def _add_listeners(self) -> None:
 		
 		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)
 		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
@@ -174,15 +178,17 @@ class MixerComponent(Component):
 		[btn.add_value_listener(self._on_btn_in_top_row_pressed, identify_sender=True) for btn in self._btns_top_row]
 		[btn.add_value_listener(self._on_btn_in_btm_row_pressed, identify_sender=True) for btn in self._btns_btm_row]
 
+		self.song.add_visible_tracks_listener(self._on_tracks_added_or_deleted)
+
 
 	################################################################################################################
 
 
 	@override
 	def build_midi_map(self, midi_map_handle) -> None:
-		"""Create Live MIDI mappings for the mixer strips and transport buttons."""
+		"""Create Live MIDI mappings for the mixer strips."""
 		
-		log_info(f"MixerController->build_midi_map({midi_map_handle}) called.")
+		log_info(f"MixerComponent->build_midi_map({midi_map_handle}) called.")
 
 		for strip_index, strip in enumerate(self._strips):
 			
@@ -196,11 +202,9 @@ class MixerComponent(Component):
 				log_assignment(strip_index, cc_no, str(parameter) if parameter is not None else "")
 
 				MidiMap.map_midi_cc(midi_map_handle, parameter, Constants.Hardware.MIDI_CHANNEL, cc_no, map_mode, False) # from Live.Midimap
-				continue
+				
 			
-			#MidiMap.forward_midi_cc(self.control_surface.handle(), midi_map_handle, Constants.Hardware.MIDI_CHANNEL, cc_no)
-
-		log_info(f"<-----Returning from MixerController.build_midi_map({midi_map_handle}).")
+		log_info(f"<-----Returning from MixerComponent.build_midi_map({midi_map_handle}).")
 
 
 	################################################################################################################
@@ -208,15 +212,15 @@ class MixerComponent(Component):
 
 	def _create_controls(self) -> None:
 		
-		self._btn_page_up: 	  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_UP)
-		self._btn_page_down:  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_DOWN)
+		self._btn_page_up 	 = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_UP)
+		self._btn_page_down  = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.PAGE_DOWN)
 
-		self._btn_sel_faders: ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_SLIDERS)
-		self._btn_sel_tbs:	  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_BUTTONS_TOP)
-		self._btn_sel_bbs:	  ButtonElement = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_BUTTONS_BOTTOM)
+		self._btn_sel_faders = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_SLIDERS)
+		self._btn_sel_tbs	 = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_BUTTONS_TOP)
+		self._btn_sel_bbs	 = ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, MXR.SELECT_BUTTONS_BOTTOM)
 
-		self._btns_top_row:	list[ButtonElement] = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc)  for cc in MXR.BUTTONS_TOP_ROW]
-		self._btns_btm_row:	list[ButtonElement] = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc)  for cc in MXR.BUTTONS_BOTTOM_ROW]
+		self._btns_top_row   = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc)  for cc in MXR.BUTTONS_TOP_ROW]
+		self._btns_btm_row   = [ButtonElement(True, MIDI_CC_TYPE, H.MIDI_CHANNEL, cc)  for cc in MXR.BUTTONS_BOTTOM_ROW]
 
 
 	################################################################################################################
@@ -226,17 +230,17 @@ class MixerComponent(Component):
 	def disconnect(self) -> None:
 		"""Remove listeners and release the assigned tracks when the script disconnects."""
 
-		log_info("MixerController.disconnect() called.")
-		
-		self.song.remove_visible_tracks_listener(self._on_tracks_added_or_deleted)
-		self._remove_button_listeners()
-		
-		for strip in self._strips:
-			strip.set_assigned_track(None)
+		log_info("MixerComponent.disconnect() called.")
 
-		for track in self._assigned_tracks:
-			if track and track.name_has_listener(self._on_track_name_changed):
-				track.remove_name_listener(self._on_track_name_changed)
+		if self.is_enabled():
+			self._remove_listeners()
+		
+			for strip in self._strips:
+				strip.set_assigned_track(None) 
+
+			for track in self._assigned_tracks:
+				if track and track.name_has_listener(self._on_track_name_changed):
+					track.remove_name_listener(self._on_track_name_changed)
 
 
 	################################################################################################################
@@ -244,13 +248,22 @@ class MixerComponent(Component):
 
 	def _get_filtered_tracks(self) -> tuple[Track, ...]:
 		"""Utility function to get the selection of tracks required by the mode setting."""
-		
+
+		# Don't call if not enabled.
+		# TODO: Remove when you are sure it's not called.
+		if not self.is_enabled():
+			log_error("Try to avoid calling if not enabled.  U haven't written the code for that.")
+			raise RuntimeError("Error: We should try to avoid calling if not enabled.")
+
+		if self.is_enabled() == False:
+			return ()
 		if self._layout_mode == LayoutMode.STANDARD: # All Tracks (standard) 
 			return tuple(self.song.visible_tracks) + tuple(self.song.return_tracks) + (self.song.master_track,)
-		elif self._layout_mode == LayoutMode.RETURNS:  # Returns Only
+		if self._layout_mode == LayoutMode.RETURNS:  # Returns Only
 			return tuple(self.song.return_tracks)
-		else:  # Tracks Only
-			return tuple(self.song.visible_tracks)
+
+		# Tracks and master.
+		return tuple(self.song.visible_tracks)
 		
 
 	################################################################################################################
@@ -366,6 +379,28 @@ class MixerComponent(Component):
 
 	################################################################################################################
 
+	@override
+	def on_enabled_changed(self):
+
+		log_info(f"MixerComponent.on_enabled_changed() called.  enabled={self.is_enabled()} explicit={self.is_enabled(True)}.")
+
+		if self.is_enabled():
+			# Called when component becomes active – do initial setup
+			self._add_listeners()
+			
+		else:
+			self._remove_listeners()
+			for strip in self._strips:
+				strip.set_assigned_track(None) 
+
+		self.reassign_strips() # This deals with removing track listeners.
+		self.control_surface.request_rebuild_midi_map()
+
+		return super().on_enabled_changed()
+
+
+	################################################################################################################
+
 
 	def _on_strip_parameter_changed(self, strip_index: int):
 		"""Called when a parameter on a strip changes."""
@@ -375,7 +410,7 @@ class MixerComponent(Component):
 		param = strip.slider_parameter()
 
 		if param is not None:
-			self._display_component.update_parameter(strip_index, param)
+			self._display_component.update_parameter(strip_index, param, ROW.BR)
 
 
 	################################################################################################################
@@ -383,7 +418,7 @@ class MixerComponent(Component):
 
 	def _on_tracks_added_or_deleted(self) -> None:
 		
-		log_info("MixerController.on_tracks_added_or_deleted called().")
+		log_info("MixerComponent.on_tracks_added_or_deleted called().")
 		
 		#self._validate_strip_offset()
 		self.reassign_strips()
@@ -402,7 +437,7 @@ class MixerComponent(Component):
 
 	def reassign_strips(self) -> None:
 		
-		log_info("MixerController.reassign_strips() called.")
+		log_info("MixerComponent.reassign_strips() called.")
 
 		# Remove existing listeners.
 		for track in self._assigned_tracks:
@@ -412,6 +447,9 @@ class MixerComponent(Component):
 		# Reset assigned tracks list.
 		self._assigned_tracks = []
 
+		if not self.is_enabled():	# Return here so we've cleared the tracks and the listeners.
+			return
+		
 		# Get tracks based on display mode
 		tracks = self._get_filtered_tracks()
 
@@ -420,6 +458,7 @@ class MixerComponent(Component):
 
 		self._validate_strip_offset()
 		track_index = self._strip_offset
+
 
 		for strip_index, strip in enumerate(self._strips):
 
@@ -453,7 +492,7 @@ class MixerComponent(Component):
 		#self.control_surface.request_rebuild_midi_map() # We don't do it here because maybe mapping hasn't changed,
 		#			ie. perhaps only the name has changed.
 		
-		log_info("<-----Returning from MixerController.reassign_strips()")
+		log_info("<-----Returning from MixerComponent.reassign_strips()")
 		
 
 	################################################################################################################
@@ -462,16 +501,16 @@ class MixerComponent(Component):
 	# def receive_midi_cc(self, cc_no, cc_value) -> None:
 	# 	"""Route incoming CC events for mixer navigation and transport control."""
 		
-	# 	log_info(f"MixerController.receive_midi_cc({cc_no}, {cc_value}) called.")
+	# 	log_info(f"MixerComponent.receive_midi_cc({cc_no}, {cc_value}) called.")
 			
 	# 	if cc_no in Constants.Mixer.SLIDERS:
 	# 		channel_strip = self._strips[cc_no - Constants.Mixer.SLIDER_BASE]
 	# 		channel_strip.slider_moved(cc_value)
 
 	# 	else:
-	# 		log("\t|----->Midi cc not handled by MixerController.")
+	# 		log("\t|----->Midi cc not handled by MixerComponent.")
 
-	# 	log_info(f"<-----Returning from MixerController.receive_midi_cc({cc_no}, {cc_value}).")
+	# 	log_info(f"<-----Returning from MixerComponent.receive_midi_cc({cc_no}, {cc_value}).")
 	# 	return None
 
 
@@ -481,19 +520,19 @@ class MixerComponent(Component):
 	@override
 	def refresh_state(self) -> None:
 		
-		log_info("MixerController.refresh_state() called.")
+		log_info("MixerComponent.refresh_state() called.")
 		
 		self._update_selected_row_leds()
 		self.reassign_strips()
 		self.control_surface.request_rebuild_midi_map() # <---- Not sure if required here.
 		
-		log_info("<-----Returning from MixerController.refresh_state().")
+		log_verbose("<-----Returning from MixerComponent.refresh_state().")
 
 
 	################################################################################################################
 
 
-	def _remove_button_listeners(self) -> None:
+	def _remove_listeners(self) -> None:
 
 		self._btn_page_up.remove_value_listener(self._on_btn_page_up_pressed)
 		self._btn_page_down.remove_value_listener(self._on_btn_page_down_pressed)
@@ -503,6 +542,8 @@ class MixerComponent(Component):
 
 		[btn.remove_value_listener(self._on_btn_in_top_row_pressed) for btn in self._btns_top_row]
 		[btn.remove_value_listener(self._on_btn_in_btm_row_pressed) for btn in self._btns_btm_row]
+
+		self.song.remove_visible_tracks_listener(self._on_tracks_added_or_deleted)
 		
 
 	################################################################################################################
@@ -567,8 +608,15 @@ class MixerComponent(Component):
 
 	@override
 	def update(self) -> None:
+
+		if not self.is_enabled():
+			return
+		
+		log_verbose("MixerComponent.update() called.")
+		self._update_selected_row_leds() # For light at start.
+
+		#self.refresh_state()
 		super().update()
-		#log_info("MixerComponent.update() called.")
 
 
 	################################################################################################################
@@ -724,7 +772,7 @@ class MixerChannelStrip(object):
 
 	# def slider_moved(self, cc_value: int) -> None:
 
-	# 	log(f"MixerController.slider_moved({cc_value}) called.")
+	# 	log(f"MixerComponent.slider_moved({cc_value}) called.")
 	# 	parameter = self.slider_parameter() # get the parameter.
 
 	# 	if parameter and hasattr(parameter, "min") and hasattr(parameter, "max") and parameter.max != parameter.min:

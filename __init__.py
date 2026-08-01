@@ -42,6 +42,7 @@ def create_instance(c_instance):
 	"""Create and return the Remote SL controller instance."""
 
 	log_info("*-> Creating instance...")
+
 	instance = RemoteSL(c_instance)
 	instance.show_message("RemoteSL_Customised created...")
 

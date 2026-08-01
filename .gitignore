@@ -17,3 +17,4 @@ pyproject.toml
 # Build directory created by ableton.
 __pycache__/
 
+____Live/

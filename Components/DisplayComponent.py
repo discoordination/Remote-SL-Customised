@@ -1,23 +1,28 @@
 ####################################################################################################################
-## Copyright (C) 2026 William Werkmeister
-#
-# SPDX-License-Identifier: GPL-3.0-or-later
-#
-####################################################################################################################
-####################################################################################################################
-#
-# DisplayComponent.py
+					##############################################
+					########							  ########
+					########      DisplayComponent.py 	  ########
+					########	 				  		  ########
+					##############################################
+					##############################################
+					#											 #
+					## Copyright (C) 2026 William Werkmeister	##
+					#											 #
+					# SPDX-License-Identifier: GPL-3.0-or-later  #
+					#											 #
+					##############################################
 ####################################################################################################################
 
 """Controller logic for the Remote SL display strips."""
 
+from __future__ import annotations
 from Live.DeviceParameter import DeviceParameter
 
 from ableton.v2.control_surface import Component
 from ableton.v3.base import as_ascii
 
 from enum import Enum, IntEnum
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TYPE_CHECKING
 from dataclasses import dataclass
 
 from copy import deepcopy
@@ -34,6 +39,9 @@ else:
 
 from ..consts import Constants, H, SYX
 from ..RemoteSL_Logger import log, log_info, log_midi, log_error, log_verbose
+
+if TYPE_CHECKING:
+	from ..RemoteSL import RemoteSL
 
 
 __all__ = ['DisplayComponent', 'ROW', 'DISPLAY']
@@ -180,9 +188,20 @@ def format_param(param: Optional[DeviceParameter], decimals=2) -> str:
 class DisplayComponent(Component):
 	"""Handle the two display strips and their associated text updates."""
 
+
+	################################################################################################################
+
 	# Display could be represented as 2 lines of 8 strings.
 	Str8Tup = tuple[str, str, str, str, str, str, str, str]
 	DisplayPatch = tuple[Str8Tup, Str8Tup]
+
+	################################################################################################################
+
+	_control_surface     : RemoteSL
+
+	_cachedDisplay       : _Display
+	_currentDisplay      : _Display
+	_message_popup_ticks : int
 
 
 	################################################################################################################
@@ -192,15 +211,16 @@ class DisplayComponent(Component):
 
 		log_info(f"DisplayComponent.__init__({control_surface},{name}) called.")
 
-		super().__init__(name=name, *a, **k)
+		super().__init__(name=name, is_enabled=False, *a, **k)
 		
 		self._control_surface = control_surface
 
 		# Initialize a blank display.  Created dirty.
-		self._currentDisplay: _Display = _Display()
+		self._currentDisplay = _Display()
 
 		# Memory for displaying popups.
-		self._cachedDisplay: _Display = _Display()
+		self._cachedDisplay = _Display()
+
 		self._message_popup_ticks = -1 	# -1 means timer disabled positive is running and 0 means fire.
 
 
@@ -209,7 +229,6 @@ class DisplayComponent(Component):
 		# self.left_strip_parameters:  Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
 		# self.right_strip_names =		[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
 		# self.right_strip_parameters: Sequence[Optional[DeviceParameter]] = 	[None for  _ in range(H.NUM_CONTROLS_PER_ROW)]
-
 
 		#self.refresh_state()
 
@@ -282,9 +301,6 @@ class DisplayComponent(Component):
 
 		log(f"DisplayComponent.disconnect() called.")
 
-		self._currentDisplay = _Display()
-		self._cachedDisplay = _Display()
-
 		self.clear_displays()
 		self.show_offline_message()
 
@@ -341,6 +357,30 @@ class DisplayComponent(Component):
 
 	def _is_timed_message_being_displayed(self) -> bool: 
 		return self._message_popup_ticks != -1
+
+
+	################################################################################################################
+
+
+	@override
+	def on_enabled_changed(self):
+
+		log_info(f"DisplayComponent.on_enabled_changed() called.  enabled={self.is_enabled()} explicit={self.is_enabled(True)}.")
+
+		if self.is_enabled():
+			# Called when component becomes active – do initial setup
+			# We don't need to do anything here.  If enabled then the display works.
+			# We could show the welcome message maybe.
+			self.show_timed_message("Welcome to RemoteSL Customized", 6.0, True, ROW.TL)
+			self.show_timed_message("discoordinated by Will W", 6.0, True, ROW.TR)
+			
+		else:
+			# Again we don't really need to do anything... Could clear the screens.
+			self.clear_displays()
+			self._currentDisplay = _Display()
+			self._cachedDisplay = _Display()
+
+		return super().on_enabled_changed() # This calls update
 
 
 	################################################################################################################
@@ -409,12 +449,18 @@ class DisplayComponent(Component):
 		# TODO: Rename to setup_display_for_controls and write a function to make a line of 2 row controls
 		raise NotImplementedError()
 
+
 	################################################################################################################
 
 
 	def show_offline_message(self):
 		"""Show the Ableton is OFFLINE message."""
-		self.write_centred_display_rows("Ableton is OFFLINE", ROW.TL, ROW.TR)
+		
+		# We're going to bypass the usual framework.  As all will be disabled by now.
+		offline_msg = "*** Ableton is OFFLINE ***".center(H.NUM_CHARS_PER_DISPLAY_LINE)
+		self._send_display_string(offline_msg, ROW.TL, 0)
+		self._send_display_string(offline_msg, ROW.TR, 0)
+		
 
 
 	################################################################################################################
@@ -472,8 +518,23 @@ class DisplayComponent(Component):
 	def update(self):
 		"""Refresh the display content for the four display rows natively."""
 
+		if not self.is_enabled():
+			return
+
+		log_verbose("DisplayComponent.update() called.")
 		super().update()
 
+
+	################################################################################################################
+
+
+	def update_tick(self):
+
+		if not self.is_enabled():
+			return
+
+		log("DisplayComponent.update_display() called.")
+		
 		# Tick the timer and check if expired.
 		# -1 is off... 0 is end of timer.
 		if (self._message_popup_ticks > -1):
@@ -520,14 +581,16 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def update_parameter(self, index_of_parameter: int, parameter: DeviceParameter):
+	def update_parameter(self, index_of_parameter: int, parameter: DeviceParameter, row: ROW):
 
 		log(f"DisplayComponent.updateParameter({index_of_parameter}, {parameter}) called.")
 
+		# Do you want to update the cache if not being shown or update the actual display.
 		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+
 		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
 
-		line = display_to_modify.right_display_rows[1].text
+		line = display_to_modify.all_rows[row].text
 		if line == "":
 			line = " " * H.NUM_CHARS_PER_DISPLAY_LINE
 
@@ -537,7 +600,7 @@ class DisplayComponent(Component):
 
 		new_strips = line[:index_of_parameter * H.NUM_CHARS_PER_DISPLAY_STRIP] + strip + line[(index_of_parameter + 1) * H.NUM_CHARS_PER_DISPLAY_STRIP:]
 
-		display_to_modify.set_row_string(ROW.BR, new_strips)
+		display_to_modify.set_row_string(row, new_strips)
 		
 
 	################################################################################################################
