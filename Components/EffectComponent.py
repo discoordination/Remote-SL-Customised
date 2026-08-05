@@ -47,7 +47,7 @@ else:
     def override(func):
         return func
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
@@ -70,8 +70,8 @@ class EffectComponent(Component, TrackedMixin):
 
 	################################################################################################################
 
-	_control_surface           : RemoteSL
-	_display_component         : DisplayComponent
+	#_control_surface           : RemoteSL
+	#_display_component         : DisplayComponent
 
 	# ------------- Controls ----------------
 	_btn_page_up               : ButtonElement
@@ -88,9 +88,9 @@ class EffectComponent(Component, TrackedMixin):
 	# --------------------------------------
 
 	_assigned_device           : Device | None
+	_locked_device			   : Device | None
 	_assigned_device_is_locked : bool
 	_bank					   : int
-	_blank_prompt_is_drawn     : bool
 	_current_display_row       : str
 	_display_page_index        : int
 	_last_lock_press_time      : float
@@ -110,19 +110,19 @@ class EffectComponent(Component, TrackedMixin):
 
 		super().__init__(name = name, song = control_surface.song, is_enabled=False, *a, **k)
 
-		self._control_surface = control_surface # ref. to the owning RemoteSL object.
-		self._display_component = control_surface._display_component # ref. to the display.
+		self._control_surface : RemoteSL = control_surface # ref. to the owning RemoteSL object.
+		self._display_component : DisplayComponent = control_surface._display_component
 
 		self._create_controls()
 		
 		self._last_selected_track = None
-		self._blank_prompt_is_drawn = False
 
 		# --- DYNAMIC DISPLAY STATE TRACKING ---
 		self._current_display_row = "pots" # Defaults to pots on startup
 
 		self._assigned_device_is_locked = False
 		self._assigned_device = None
+		self._locked_device = None
 		self._bank = 0
 		self._display_page_index = 0
 		self._show_bank = False
@@ -132,7 +132,6 @@ class EffectComponent(Component, TrackedMixin):
 		# 1. Create the 16 strips in memory FIRST
 		self._strips = [EffectChannelStrip(self) for _ in range(16)]
 		
-		self._change_assigned_device(self.song.appointed_device)
 		#self.reassign_strips() is called in change_assigned_device
 
 		log("<-----Returning from EffectComponent.__init__().")
@@ -170,8 +169,8 @@ class EffectComponent(Component, TrackedMixin):
 		[button.add_value_listener(self._on_btm_row_button_pressed, identify_sender = True) for button in self._buttons_bottom_row]
 
 		self.song.add_appointed_device_listener(self._on_appointed_device_changed)
-		self.song.add_tracks_listener(self._on_tracks_changed)  #FIXME: Remove if not needed.
-		self.song.add_visible_tracks_listener(self._on_visible_tracks_changed) #FIXME: Remove if not needed.
+		self.song.add_tracks_listener(self._on_tracks_changed)  #FIXME #!: Remove if not needed.
+		self.song.add_visible_tracks_listener(self._on_visible_tracks_changed) #FIXME #!: Remove if not needed.
 
 
 	################################################################################################################
@@ -183,8 +182,8 @@ class EffectComponent(Component, TrackedMixin):
 		
 		log_info(f"EffectComponent.build_midi_map({midi_map_handle}) called.")
 
-		# COMBINE BOTH ROWS INTO ONE LIST OF 16 ITEMS TO FIX INDEX ERROR
-		# This gives us indices 0-7 for pots, and 8-15 for encoders
+		#* COMBINE BOTH ROWS INTO ONE LIST OF 16 ITEMS TO FIX INDEX ERROR
+		#* This gives us indices 0-7 for pots, and 8-15 for encoders
 		combined_ccs = list(Constants.Effect.POTS + Constants.Effect.ENCODERS)
 
 		for strip_index, strip in enumerate(self._strips):
@@ -227,10 +226,10 @@ class EffectComponent(Component, TrackedMixin):
 	def _change_assigned_device(self, device: Optional[Device]) -> None:
 		"""Safely update active device references across track focus shifts."""
 
-		log_info(f"EffectComponent.__change_assigned_device({str(device)}) called.")
+		log_info(f"EffectComponent._change_assigned_device({str(device)}) called.")
 
 		if self._assigned_device_is_locked:
-			log("LOCK ENGINE GUARD: Blocked appointed_device focus shift to maintain hardware lock.")
+			log_verbose("LOCK ENGINE GUARD: Blocked appointed_device focus shift to maintain hardware lock.")
 			return None
 		
 		# Set the master reference pointer to the device object handed down by Live
@@ -277,6 +276,7 @@ class EffectComponent(Component, TrackedMixin):
 		if self.is_enabled():
 			self._change_assigned_device(None)
 			self._remove_listeners()
+
 
 
 	################################################################################################################
@@ -341,16 +341,17 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _lock_to_device(self, device: Optional[Device]) -> None:
+	def _lock_to_device(self, device: Device | None) -> None:
 		"""Natively handle the hardware feedback loop when locking."""
-
-		log_info(f"EffectComponent._lock_to_device({Device}) called.")
+		#* So we don't call this from our listener.  Instead we call toggle lock and it calls
+		#*  RemoteSL.lock_to_device which then calls this.
+		log_info(f"EffectComponent._lock_to_device({device}) called.")
 
 		if device:
 			self._assigned_device_is_locked = True
-			self.control_surface.toggle_lock()
+			self._locked_device = device # according to live.
 			self._display_component.show_timed_message("Device Locked!", duration_seconds=2.0)	
-			self._update_select_row_leds() # Could be more efficient and just update 1.
+			self._update_select_row_leds()
 
 
 
@@ -359,6 +360,8 @@ class EffectComponent(Component, TrackedMixin):
 
 	def _on_appointed_device_changed(self) -> None:
 		"""Callback for changing the appointed device."""
+
+		#* Handily this is also called when parameter names change.
 
 		log_info("EffectComponent._on_appointed_device_change() called.")
 		log_listener_callback()
@@ -430,12 +433,12 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 	
 
-	def _on_btn_sel_dpads_pressed(self, value) -> None:
+	# def _on_btn_sel_dpads_pressed(self, value) -> None:
 
-		log_listener_callback(value)
+	# 	log_listener_callback(value)
 
-		if value:
-			self.song.stop_all_clips()
+	# 	if value:
+	# 		self.song.stop_all_clips()
 
 
 
@@ -461,20 +464,27 @@ class EffectComponent(Component, TrackedMixin):
 
 		log_listener_callback(value)
 
-		if value:								
-			
-			log("LOCK BUTTON PRESSED: Handing toggle request to root script...")
-		
-			if not self._assigned_device_is_locked:
-				log("LOCK ROUTE: Engaging lock_to_device...")
-				# This now sets the flag to True and updates select LEDs natively
-				
-				self._lock_to_device(self.song.appointed_device)
-				
+		if value:
+
+			log_verbose(f"{len(self.song.view.selected_track.devices)=}")
+			log_verbose(f"{self.song.view.selected_track.view.selected_device=})")
+
+			if self.song.view.selected_track.view.selected_device is not None: # Root script does nothing with None selected.
+				log_verbose("LOCK BUTTON PRESSED: Handing toggle request to root script.")
+				self.control_surface.toggle_lock()
 			else:
-				log("LOCK ROUTE: Engaging unlock_from_device...")
-				
-				self._unlock_from_device(self._assigned_device)
+				if self._assigned_device_is_locked and self._locked_device is not None: # Only try this if the device is locked.
+
+					log_verbose("LOCK BUTTON PRESSED: On empty track so attempting to unlock.")
+
+					original_track = self.song.view.selected_track
+					locked_track : Track = self._locked_device.canonical_parent
+					self.song.view.selected_track = locked_track
+					self.song.view.select_device(self._locked_device)
+					self.control_surface.toggle_lock()
+					self.song.view.selected_track = original_track
+						
+					self.control_surface.unlock_from_device(self._locked_device)
 				
 
 
@@ -515,7 +525,8 @@ class EffectComponent(Component, TrackedMixin):
 		if self.is_enabled():
 			# Called when component becomes active – do initial setup
 			self._add_listeners()
-			
+			self._change_assigned_device(self.song.appointed_device)
+
 		else:
 			self._remove_listeners()
 
@@ -576,7 +587,7 @@ class EffectComponent(Component, TrackedMixin):
 
 		strip = self._strips[strip_index]
 		param = strip.assigned_parameter
-
+		
 		if param is not None:
 			self._display_component.update_parameter(strip_index, param, ROW.BL)
 
@@ -598,43 +609,39 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def reassign_strips(self, force_rebuild: bool = True) -> None:
+	def reassign_strips(self) -> None: # , force_rebuild: bool = True)
 		
-		log_info(f"EffectComponent.reassign_strips(force_rebuild={force_rebuild}) called.")
+		log_info(f"EffectComponent.reassign_strips() called.") #force_rebuild={force_rebuild}
 		
-
 		device = self._assigned_device
 
 		if device is not None:
 			
-			log("Device valid...")
-			self._blank_prompt_is_drawn = False
+			log_verbose("Device valid...")
 
-			param_index = 0
-			param_names = []
-			parameters = []
+			param_index: int = 0
+			param_names: list[str] = []
+			parameters: list[DeviceParameter | None] = []
 
-			# TODO: Add listener to name of parameters in case they get changed...???
 
 			for strip in self._strips:
 				
-				param = None
-				name = ""
+				param: DeviceParameter | None = None
+				name: str = ""
 				new_index = param_index + self._bank * 16
 
-				device_parameters = device.parameters[1:]
+				device_parameters: list[DeviceParameter | None] = list(device.parameters[1:])
 
 				if new_index < len(device_parameters):
 					param = device_parameters[new_index]
 				
 				if param:
-					name = param.name
+					name : str = param.name
 
 				strip.assigned_parameter = param
 				parameters.append(param)
 				param_names.append(name)
 				param_index += 1
-
 
 			self._report_bank()
 
@@ -647,9 +654,9 @@ class EffectComponent(Component, TrackedMixin):
 				active_names = param_names[8:]
 				active_params = parameters[8:]
 
-
+			log_verbose("!!! Setting setup_display_for_params()...")
 			self._display_component.setup_display_for_params(DISPLAY.LEFT, active_names, active_params)
-
+			#self._display_component.
 
 		else:
 			# This is for if no device is selected.
@@ -659,12 +666,13 @@ class EffectComponent(Component, TrackedMixin):
 			log("CLEARING SCREEN: Caching original single-string text prompt...")
 			
 			no_device_msg = "Please select a Device in Live to edit it..."
-			parameters = [None for _ in range(8)]
+			#parameters = [None for _ in range(8)]
 
+			self._display_component.clear_display_row(ROW.BL)
 			self._display_component.write_display_rows(no_device_msg, ROW.TL)
 
-
-		log_info(f"<-----Returning from EffectComponent.__reassign_strips(force_rebuild={force_rebuild}).")
+			
+		log_info(f"<-----Returning from EffectComponent.__reassign_strips().")
 
 
 	################################################################################################################
@@ -773,27 +781,31 @@ class EffectComponent(Component, TrackedMixin):
 	################################################################################################################
 
 
-	def _unlock_from_device(self, device: Optional[Device]) -> None:
+	def _unlock_from_device(self, device: Device | None) -> None:
 		"""Natively handle the hardware feedback loop when unlocking."""
 
 		log_info(f"EffectComponent._unlock_from_device({device}) called.")
 
-		if device and device == self._assigned_device:
+		if device and device == self._locked_device:
 			
 			self._assigned_device_is_locked = False
-			self.control_surface.toggle_lock()
-
-			self._update_select_row_leds()
+			self._locked_device = None
 			self._display_component.show_timed_message("Device Unlocked!", duration_seconds=2.0)
 
-			self._display_page_index = 0
-			self._current_display_row = "pots"
-
 			if self.song.appointed_device != self._assigned_device:
-				
+
+				#? I'm guessing reset display and row only if the device actually changes.
+				self._current_display_row = "pots"
+				self._display_page_index = 0
 				self._assigned_device = self.song.appointed_device
 				self.reassign_strips()
 				self.control_surface.request_rebuild_midi_map()
+
+			self._update_select_row_leds()
+
+		else:
+			log_warning("Attempted to unlock with no device.  This could happen....")
+			#raise RuntimeError("Attempted to unlock with no device. Impossible.")
 
 
 	################################################################################################################
@@ -801,92 +813,96 @@ class EffectComponent(Component, TrackedMixin):
 
 	@override
 	def update(self) -> None:
-		"""Called sometimes.."""
+		"""Called sometimes... """
+		#! FIXME: We need to actually work out what we need to do here.
 
 		if not self.is_enabled():
 			return
 
 		log_verbose("EffectComponent.update() called.")
+		#self._update_select_row_leds()
 		super().update()
 		
-		# --- FIX: THE ABSOLUTE UPDATE DISPLAY LOCK ENVELOPE ---
-		# If the controller is locked, we completely freeze the parameter tracking view!
-		if getattr(self, '_assigned_device_is_locked', False) == True:
+		#* If the controller is locked, we completely freeze the parameter tracking view!
+		#* What to do if device is locked.
+		#! This isn't called on a regular tick so will it work is it the best method... Try to test.
+		# if self._assigned_device_is_locked == True:
 			
-			# Monitor if the locked device was physically deleted from the session set
-			try:
-				if self._assigned_device is None or not self._assigned_device.canonical_parent:
-					raise Exception("Device deleted")
+		# 	# Monitor if the locked device was physically deleted from the session set
 
-			except Exception:
-				
-				log("LOCK BREAK: Locked device was physically deleted! Releasing control maps...")
-				self._assigned_device_is_locked = False
-				self._unlock_from_device(self._assigned_device)
-				self._assigned_device = self._control_surface.song.appointed_device
-				if self._assigned_device is not None:
-					self._change_assigned_device(self._assigned_device)
-				
-			# If the device is alive and locked, EXIT IMMEDIATELY.
-			# This blocks the empty track lane check below from ever executing!
-			return None
-		
-		# ------------------------------------------------------
+		# 	if self._assigned_device is None or not self._assigned_device.canonical_parent:
 
-		# Fetch exactly what device Ableton's viewport highlights right now
-		current_track_device = self.song.view.selected_track.view.selected_device
+		# 		log_verbose("LOCK BREAK: Locked device was physically deleted! Releasing control maps...")
+		# 		self._assigned_device = self._control_surface.song.appointed_device
+		# 		#self._assigned_device_is_locked = False
+		# 		self._unlock_from_device(self._assigned_device)
+
+		# 		if self._assigned_device is not None:
+		# 			self._change_assigned_device(self._assigned_device)
+				
+		# 	# If the device is alive and locked, EXIT IMMEDIATELY.
+		# 	# This blocks the empty track lane check below from ever executing!
+		# 	return None
+		#*------------------------------------------------------------------------------
 		
-		# --- CHANNELS MONITOR BALANCED RE-SYNC GUARD (Runs ONLY when unlocked) ---
-		if current_track_device is None and self._assigned_device is not None:
-			log("POLLING ENGINE: Empty track lane detected. Resetting references...")
-			self._assigned_device = None
-			for strip in self._strips:
-				strip.assigned_parameter = None
-			self.reassign_strips(force_rebuild=True)
-			return None
+		#! FIXME: This stuff after here is it necessary? Does it work?
+		#* Fetch exactly what device Ableton's viewport highlights right now
+		# current_track_device = self.song.view.selected_track.view.selected_device
+		
+		# # --- CHANNELS MONITOR BALANCED RE-SYNC GUARD (Runs ONLY when unlocked) ---
+		# if current_track_device is None and self._assigned_device is not None:
+		# 	log("POLLING ENGINE: Empty track lane detected. Resetting references...")
+		# 	self._assigned_device = None
+		# 	for strip in self._strips:
+		# 		strip.assigned_parameter = None
+		# 	self.reassign_strips()
+		# 	self.control_surface.request_rebuild_midi_map()
+		# 	return None
 			
-		if current_track_device is None and self._assigned_device is None:
-			return None
-		# ------------------------------------------------------------------------
+		# if current_track_device is None and self._assigned_device is None:
+		# 	return None
+		#* ------------------------------------------------------------------------
 		
-		
-		moved_strip_index = None
+		#? Not sure what this does.
+		# moved_strip_index = None
 
-		for strip_index, strip in enumerate(self._strips):
-			param = strip.assigned_parameter
-			if param is not None:
-				current_val = param.value
+		# for strip_index, strip in enumerate(self._strips):
+		# 	param = strip.assigned_parameter
+		# 	if param is not None:
+		# 		current_val = param.value
 				
-				# Check if the value shifted since the last frame scan
-				if hasattr(strip, '_last_value') and strip._last_value is not None and current_val != strip._last_value:
-					strip._last_value = current_val
-					moved_strip_index = strip_index
-					break
+		# 		# Check if the value shifted since the last frame scan
+		# 		if hasattr(strip, '_last_value') and strip._last_value is not None and current_val != strip._last_value:
+		# 			strip._last_value = current_val
+		# 			moved_strip_index = strip_index
+		# 			break
 				
-				strip._last_value = current_val
+		# 		strip._last_value = current_val
 
 
-		# Update the screen text ONLY if a physical hand movement row shift actually happened
-		if moved_strip_index is not None:
-			new_row = "pots" if moved_strip_index < 8 else "encoders"
+		## Update the screen text ONLY if a physical hand movement row shift actually happened
+		# if moved_strip_index is not None:
+		# 	new_row = "pots" if moved_strip_index < 8 else "encoders"
 			
-			if not hasattr(self, '_current_display_row'):
-				self._current_display_row = "pots"
+		# 	if not hasattr(self, '_current_display_row'):
+		# 		self._current_display_row = "pots"
 				
-			if self._current_display_row != new_row:
-				self._current_display_row = new_row
+		# 	if self._current_display_row != new_row:
+		# 		self._current_display_row = new_row
 				
-				# --- SYNC THE VIRTUAL PAGE INDEX BASED ON ACTIVE ROW FLIP ---
-				if not hasattr(self, '_display_page_index'):
-					self._display_page_index = 0
+		# 		# --- SYNC THE VIRTUAL PAGE INDEX BASED ON ACTIVE ROW FLIP ---
+		# 		if not hasattr(self, '_display_page_index'):
+		# 			self._display_page_index = 0
 				
-				# If we are on the first 16-parameter block, align the page number
-				if self._bank == 0:
-					self._display_page_index = 0 if new_row == "pots" else 1
-				# -------------------------------------------------------------
+		# 		# If we are on the first 16-parameter block, align the page number
+		# 		if self._bank == 0:
+		# 			self._display_page_index = 0 if new_row == "pots" else 1
+		# 		# -------------------------------------------------------------
 				
-				# Update text only, skip the MIDI map layout reconstruction!
-				self.reassign_strips(force_rebuild=False)
+		# 		# Update text only, skip the MIDI map layout reconstruction!
+		# 		self.reassign_strips()
+
+		#?-------------------------------------------------------------------------
 
 
 	################################################################################################################
@@ -895,10 +911,11 @@ class EffectComponent(Component, TrackedMixin):
 	def _update_select_row_leds(self) -> None:
 		
 		if self._assigned_device_is_locked:
-			
+			log_verbose("Turning ON LED for device locked.")
 			self._control_surface.send_midi((M.START_BYTE, Constants.Effect.SELECT_TOP_BUTTON_ROW, 1))
 		else:
-			self._control_surface.send_midi((M.START_BYTE, Constants.Effect.SELECT_BOTTOM_BUTTON_ROW, 0))
+			log_verbose("Turning OFF device locked LED.")
+			self._control_surface.send_midi((M.START_BYTE, Constants.Effect.SELECT_TOP_BUTTON_ROW, 0))
 
 
 	################################################################################################################
@@ -915,7 +932,7 @@ class EffectChannelStrip(object):
 	################################################################################################################
 
 
-	_mixer_component 	 : EffectComponent
+	_effect_component 	 : EffectComponent
 	_assigned_parameter  : DeviceParameter | None
 	_last_value 		 : float | None
 
@@ -923,9 +940,9 @@ class EffectChannelStrip(object):
 	################################################################################################################
 
 
-	def __init__(self, mixer_component: EffectComponent):
+	def __init__(self, effect_component: EffectComponent):
 
-		self._mixer_component = mixer_component
+		self._effect_component = effect_component
 		self._assigned_parameter = None
 		self._last_value = None
 
@@ -958,8 +975,11 @@ class EffectChannelStrip(object):
 		"""Setter: Safely updates the internal parameter reference reference."""
 
 		if self._assigned_parameter is not None:
-			if self._assigned_parameter.value_has_listener(self._on_parameter_value_changed):
-				self._assigned_parameter.remove_value_listener(self._on_parameter_value_changed)
+			try:
+				if self._assigned_parameter.value_has_listener(self._on_parameter_value_changed):
+					self._assigned_parameter.remove_value_listener(self._on_parameter_value_changed)
+			except:
+				pass # This pass is to deal with deleted tracks as assigned parameter is now stale.
 				
 		self._assigned_parameter = parameter
 
@@ -1024,8 +1044,8 @@ class EffectChannelStrip(object):
 
 	def _on_parameter_value_changed(self):
 
-		strip_index = self._mixer_component._strips.index(self)
-		self._mixer_component._on_strip_parameter_changed(strip_index)
+		strip_index = self._effect_component._strips.index(self)
+		self._effect_component._on_strip_parameter_changed(strip_index)
 
 
 	################################################################################################################

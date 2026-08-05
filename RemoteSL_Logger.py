@@ -37,15 +37,15 @@ class LogLevel(Enum):
 
 # --- Configuration ---
 LOG_FILE_PATH = r"C:\\Users\\willw\\Desktop\\script_debug.txt"
-LOG_LEVEL = LogLevel.DEBUG  # DEBUG, VERBOSE, INFO, WARNING, ERROR
+LOG_LEVEL = LogLevel.VERBOSE  # DEBUG, VERBOSE, INFO, WARNING, ERROR
 
 LOG_ENABLED = True
-LOG_MIDI = True               # ← Toggle MIDI category
+LOG_MIDI = False              # ← Toggle MIDI category
 LOG_LISTENERS = True          # ← Toggle listener callback category
 LOG_ASSIGNMENTS = False       # ← Toggle assignment category
 
 # --- Per‑file logging control ---
-LOG_FILES = []  # Empty = all files; add filenames to filter
+LOG_FILES = [ "EffectComponent.py", "RemoteSL.py", "DisplayComponent.py" ]  #* Empty = all files; add filenames to filter
 #LOG_FILES = []
 
 _current_level = LOG_LEVEL
@@ -285,6 +285,8 @@ def log_assignment(
 
 ####################################################################################################################
 
+
+__all__='log','log_verbose','log_info','log_warning', 'log_error', 'log_midi', 'log_assignment', 'log_listener_callback', 'LogCategory', 'LogLevel'
 
 
 # --- Utility Functions (keep as-is) ---

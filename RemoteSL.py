@@ -9,10 +9,13 @@
 ####################################################################################################################
 
 
-# TODO:
-
+# TODO: Test if you actually need to monitor appointed device in RemoteSL or whether it is sufficient to monitor it in EffectComponent only.
+# !   |-> Pretty much done... it's running without either Appointer or onTracksChanged now.
+# FIXME: Switching on while live active doesn't bring up the controller. <--- Have tried to fix but i think it is impossible.
 
 from Live.Application import Application as LiveApplication
+from Live.Track import Track
+from Live.Device import Device
 from Live.Application import get_application
 from Live import MidiMap
 
@@ -24,7 +27,7 @@ from ableton.v2.control_surface.elements import ButtonElement, EncoderElement, S
 #from ableton.v2.base.task import wait, sequence, run
 
 import sys
-from typing import Type, cast
+from typing import Type, cast, Final
 
 # Ableton 12 runs 3.11, so it falls back to the dummy decorator silently.
 # VS Code (configured to 3.12+) will still parse it perfectly for static analysis.
@@ -36,7 +39,7 @@ else:
 
 from .consts import Constants, MIDI, M, SYX
 from .Components.TransportComponent import TransportComponent
-from .Components.DisplayComponent import DisplayComponent, ROW
+from .Components.DisplayComponent import DisplayComponent, DISPLAY, ROW
 from .Components.EffectComponent import EffectComponent
 from .Components.MixerComponent import MixerComponent
 
@@ -53,6 +56,19 @@ class RemoteSL(ControlSurface):
 
 	################################################################################################################
 
+	_device_appointer       : DeviceAppointer
+	_drumPad_select_button  : ButtonElement
+	_drumPad_buttons        : list[ButtonElement]
+	_handle                 : int
+	_sysex_receiver         : SysexElement
+
+	#* _display_component 	   : DisplayComponent
+	#* _effect_component  	   : EffectComponent
+	#* _mixer_component   	   : MixerComponent
+	#* _transport_component    : TransportComponent
+
+	################################################################################################################
+
 
 	def __init__(self, c_instance):
 		"""Initialise the Remote SL controller and its child components."""
@@ -62,25 +78,31 @@ class RemoteSL(ControlSurface):
 		super(RemoteSL, self).__init__(c_instance)
 		self.set_enabled(False)
 
-		self._handle = c_instance.handle() # <--- Remove when fully upgraded
+		self._handle = cast(int, c_instance.handle()) # <--- Remove when fully upgraded
 
 		#self._register_component(self._tranport_component) # <-- Not needed when in guard.
 		#self._update_hardware_delay = -1 # -1 is an initalizer??? <---- Not used now.
 
-		self._device_appointer = DeviceAppointer(
-			song=(self.song),
-			appointed_device_setter = self._on_appointed_device_changed,
-		)
-
-		self._drumPad_buttons: list[ButtonElement] = []
-		self._drumPad_select_button: ButtonElement
-
+		# self._device_appointer = DeviceAppointer(
+		# 	song=(self.song),
+		# 	appointed_device_setter = self._on_appointed_device_changed,
+		# )
 
 		with self.component_guard():
 
-			self._sysex_receiver: SysexElement = SysexElement(sysex_identifier=SYX.RECEIVE_SYSEX_HEADER)
+			self._sysex_receiver = SysexElement(sysex_identifier=SYX.RECEIVE_SYSEX_HEADER)
 			self._sysex_receiver.add_value_listener(self._on_sysex_received)
-			
+			# Listener to detect new track pressed.
+			#self.song.view.add_selected_track_listener(self.clean_track_switch_hook) #TODO: Move to Effect Component.
+
+			self._create_controls()
+			self._add_listeners()
+
+			# self._online_status_listener = ButtonElement(
+			# 	True, MIDI_CC_TYPE, 0xBF, 0x67
+			# )
+			# self._online_status_listener.add_value_listener(self._on_online_status_changed)
+
 			log_verbose("\t|----->Building DisplayComponent...")
 			self._display_component = DisplayComponent(self)
 
@@ -93,22 +115,14 @@ class RemoteSL(ControlSurface):
 			log_verbose("\t|----->Building TransportComponent...")
 			self._transport_component = TransportComponent(self)
 
-			self._create_controls()
-			self._add_listeners()
 
-			# Listener to detect new track pressed.
-			self.song.view.add_selected_track_listener(self.clean_track_switch_hook)
-			self.song.add_tempo_listener(self._on_tempo_changed)
-
-
-		self.enable()
 		self.show_message("RemoteSL_Customised script loaded.") # <- Shows message in bottom bar.
-
+		self.enable()
 
 		# Do some quick checks.
 		if self._enabled == False:
 			log_error("Error: RemoteSL must be enabled.")
-			raise ValueError(f"Error: Object {self} is not enabled when it should be.")
+			#raise ValueError(f"Error: Object {self} is not enabled when it should be.")
 
 		if len(self.components) != 4:
 			log_error(f"Error: num components is {len(self._components)} when it should be 4.")
@@ -133,6 +147,9 @@ class RemoteSL(ControlSurface):
 
 		self._drumPad_select_button.add_value_listener(self._on_drum_pad_select_pressed)
 
+		self.song.add_tempo_listener(self._on_tempo_changed)
+
+
 
 	################################################################################################################
 
@@ -148,7 +165,7 @@ class RemoteSL(ControlSurface):
 		log_info(f"*->RemoteSL.build_midi_map({midi_map_handle}) called.")
 
 		try:
-			super(RemoteSL, self).build_midi_map(midi_map_handle)
+			super().build_midi_map(midi_map_handle)
 
 		except Exception as e:
 			log_error(f"Error in super().build_midi_map({midi_map_handle}): {e}.")
@@ -176,64 +193,64 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
-	def clean_track_switch_hook(self):
-		"""	# --- CHANNELS MONITOR: INSTANT BLANK TRACK SCREEN WIPER ---"""
+	# def clean_track_switch_hook(self):
+	# 	"""	# --- CHANNELS MONITOR: INSTANT BLANK TRACK SCREEN WIPER ---"""
 
-		log_info(f"RemoteSL.clean_track_switch_hook_called() called.")
+	# 	log_info(f"RemoteSL.clean_track_switch_hook_called() called.")
 
-		# --- THE ABSOLUTE LOGIC GATE ---
-		# Check if our effect controller exists and if a lock is currently active
-		if hasattr(self, '_effect_controller') and self._effect_component is not None:
+	# 	# --- THE ABSOLUTE LOGIC GATE ---
+	# 	# Check if our effect controller exists and if a lock is currently active
+	# 	if hasattr(self, '_effect_controller') and self._effect_component is not None:
 			
-			# IF LOCKED IS TRUE: Exit immediately to protect your active screen text from being wiped!
-			if getattr(self._effect_component, '_assigned_device_is_locked', False) == True:
-				log("HOOK ABORT: Controller is locked. Protecting active parameter text rows.")
-				return None
-		# --------------------------------
+	# 		# IF LOCKED IS TRUE: Exit immediately to protect your active screen text from being wiped!
+	# 		if getattr(self._effect_component, '_assigned_device_is_locked', False) == True:
+	# 			log("HOOK ABORT: Controller is locked. Protecting active parameter text rows.")
+	# 			return None
+	# 	# --------------------------------
 
-		# Fetch what track your mouse just clicked in real-time
-		track = self.song.view.selected_track
+	# 	# Fetch what track your mouse just clicked in real-time
+	# 	track = self.song.view.selected_track
 		
-		# If the track lane has absolutely no plugins or devices loaded on it
-		if track is None or len(track.devices) == 0:
-			log("CLEAN SWAP ENGINE: Blank track caught. Wiping screen names...")
+	# 	# If the track lane has absolutely no plugins or devices loaded on it
+	# 	if track is None or len(track.devices) == 0:
+	# 		log("CLEAN SWAP ENGINE: Blank track caught. Wiping screen names...")
 			
-			# --- CRITICAL MEMORY RESET FOR THE ASSIGNED DEVICE ---
-			if hasattr(self, '_effect_controller') and self._effect_component is not None:
-				# Force the parent container to drop its cached plugin reference
-				self._effect_component._assigned_device = None
+	# 		# --- CRITICAL MEMORY RESET FOR THE ASSIGNED DEVICE ---
+	# 		if hasattr(self, '_effect_controller') and self._effect_component is not None:
+	# 			# Force the parent container to drop its cached plugin reference
+	# 			self._effect_component._assigned_device = None
 				
-				# Disconnect the 16 virtual channel strips so they let go of old macros
-				if hasattr(self._effect_component, '_strips'):
-					for strip in self._effect_component._strips:
-						strip.assigned_parameter = None
-			# ----------------------------------------------------
+	# 			# Disconnect the 16 virtual channel strips so they let go of old macros
+	# 			if hasattr(self._effect_component, '_strips'):
+	# 				for strip in self._effect_component._strips:
+	# 					strip.assigned_parameter = None
+	# 		# ----------------------------------------------------
 			
-			# --- THE MISSING BLUE HAND FLUSH INSTRUCTION ---
-			# We MUST explicitly tell Ableton's C++ core to rebuild its hardware mapping tables 
-			# when hitting an empty track, otherwise it natively freezes your old VST maps in memory!
-			self.request_rebuild_midi_map()
-			# -----------------------------------------------
+	# 		# --- THE MISSING BLUE HAND FLUSH INSTRUCTION ---
+	# 		# We MUST explicitly tell Ableton's C++ core to rebuild its hardware mapping tables 
+	# 		# when hitting an empty track, otherwise it natively freezes your old VST maps in memory!
+	# 		self.request_rebuild_midi_map()
+	# 		# -----------------------------------------------
 
 
-			# Explicitly pass your original prompt text directly to the display engine
-			fallback_names = ["Please select a Device in Live to edit it..."]
-			fallback_params = [None for _ in range(16)]
+	# 		# Explicitly pass your original prompt text directly to the display engine
+	# 		#fallback_names = ["Please select a Device in Live to edit it..."]
+	# 		#fallback_params = [None for _ in range(16)]
 			
-			self._display_component.setup_left_display_for_params(fallback_names, fallback_params)
+	# 		#self._display_component.setup_display_for_params(DISPLAY.LEFT, fallback_names, fallback_params)
+	# 		self._display_component.clear_display_row(ROW.BL)
+	# 		self._display_component.write_display_rows("Please select a device in Live to edit it...", ROW.TL)
 
-		log_verbose("|<-----Returning from clean_track_switch_hook()")
+	# 	log_verbose("|<-----Returning from clean_track_switch_hook()")
 			  
 
 	################################################################################################################
 
 
 	def _create_controls(self):
-			
-		for i in range(8):
-			self._drumPad_buttons.append(ButtonElement(True, MIDI_NOTE_TYPE, M.CHANNEL, Constants.Effect.DRUM_PAD_BASE_NOTE + i))
 
-		self._drumPad_select_button = ButtonElement(True, MIDI_NOTE_TYPE, M.CHANNEL, Constants.Effect.SELECT_DRUM_PAD)
+		self._drumPad_select_button = ButtonElement(True, MIDI_CC_TYPE, M.CHANNEL, Constants.Effect.SELECT_DRUM_PAD)
+		self._drumPad_buttons = [ButtonElement(True, MIDI_NOTE_TYPE, M.CHANNEL, Constants.Effect.DRUM_PAD_BASE_NOTE + i) for i in range(8)]
 
 
 	################################################################################################################
@@ -256,33 +273,20 @@ class RemoteSL(ControlSurface):
 
 		log_info("RemoteSL.disable() called.")
 
+		self.turn_off_all_leds()
 		self.send_midi(SYX.GOODBYE)
 
 		# Setting self to false is sufficient to switch off all other components.
 		self.set_enabled(False)
+
+		# for component in self.components: #? I don't believe i have to manually call this.
+		# 	component.set_enabled(False)
+
+		# TODO: Check components are disabled after disable.
 		for component in self.components:
-			component.set_enabled(False)
+			log_verbose(f"{component.name} enabled {component.is_enabled()}")
 
 
-		for component in self.components:
-			log(f"{component.name} enabled {component.is_enabled()}")
-
-
-	################################################################################################################
-
-
-	def enable(self):
-		"""Enables the device"""
-
-		log_info("RemoteSL.enable() called.")
-
-		self.set_enabled(True)
-		#self.refresh_state() # <---- Do i need to do this?
-
-
-		for component in self.components:
-			component.set_enabled(True)
-		
 
 	################################################################################################################
 
@@ -294,11 +298,13 @@ class RemoteSL(ControlSurface):
 		log_info("RemoteSL.disconnect() called.")
 
 		self._sysex_receiver.remove_value_listener(self._on_sysex_received)
+		#self._device_appointer.disconnect()
+		#self.song.view.remove_selected_track_listener(self.clean_track_switch_hook)
 
-		self._device_appointer.disconnect()
-		self._remove_control_listeners()
+		self._remove_listeners()
 
-		self.send_midi(MIDI.ALL_LEDS_OFF)
+		if self.is_enabled():
+			self.disable()
 
 		super(RemoteSL, self).disconnect()
 
@@ -328,6 +334,22 @@ class RemoteSL(ControlSurface):
 		log_verbose(f"<-----Returning from RemoteSL.disconnect()")
 
 
+	################################################################################################################
+
+
+	def enable(self):
+		"""Enables the device"""
+
+		log_info("RemoteSL.enable() called.")
+
+		self.set_enabled(True)
+		#self.refresh_state() # <---- Do i need to do this?
+
+
+		for component in self.components:
+			component.set_enabled(True)
+
+		
 	################################################################################################################
 
 
@@ -390,6 +412,12 @@ class RemoteSL(ControlSurface):
 
 	def _on_drum_pad_select_pressed(self, value):
 		log(f"_on_btn_sel_dpads_pressed({value}) called.", category=LogCategory.LISTENER)
+		if value:
+
+			self.strobe_leds()
+			self.send_midi((M.START_BYTE, Constants.Effect.SELECT_DRUM_PAD, 1))
+		else:
+			self.send_midi((M.START_BYTE, Constants.Effect.SELECT_DRUM_PAD, 0))
 
 
 	################################################################################################################
@@ -402,9 +430,28 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
+	# def _on_online_status_changed(self, value): #TODIO: Remove
+	# 	"""Doesn't really give us anything new"""
+	# 	log_info(f"Online status CC received: value={value}", category=LogCategory.LISTENER)
+	# 	if value == 1:
+	# 		log_verbose("Online status: Device connected.")
+	# 		self._device_connected = True
+	# 		if not self.is_enabled():
+	# 			self.enable()
+	# 	else:
+	# 		log_verbose("Online status: Device disconnected.")
+	# 		self._device_connected = False
+	# 		if self.is_enabled():
+	# 			self.disable()
+
+
+	################################################################################################################
+
+
 	def _on_sysex_received(self, message_data):
 
-		log_info(f"RemoteSL._on_sysex_received({message_data}) called.", category=LogCategory.LISTENER)
+		hex_str = ', '.join(f'{b:02X}' for b in message_data)
+		log_info(f"RemoteSL._on_sysex_received({hex_str}) called.", category=LogCategory.LISTENER)
 
 		# The length of data is partially decided by the sysex filter string setup in the listener.
 		# Everything in the string is disgarded and everything after is kept apart from the final byte.
@@ -431,8 +478,20 @@ class RemoteSL(ControlSurface):
 				else:
 					log_verbose("Template change sysex message detected. Disabling.")
 					self.disable()
+
+		else:
+			log_verbose(f"SYSEX: Other sysex message received: {hex_str}")
+
 				
-		   
+	################################################################################################################
+
+	
+	# @override
+	# def port_settings_changed(self):
+	# 	log_info("RemoteSL.port_settings_changed() called.")
+	# 	return super().port_settings_changed()
+
+
 	################################################################################################################
 
 
@@ -474,10 +533,22 @@ class RemoteSL(ControlSurface):
 		log_info("*->RemoteSL.refresh_state() called.")
 		#self.schedule_message(4, self.update_hardware)
 		#self.send_midi(Constants.SysEx.WELCOME) <--- Done in enable
+		self._display_component.set_refresh_displays()
 
-		super(RemoteSL, self).refresh_state() # don't call this now as it requires update().
+		super(RemoteSL, self).refresh_state() # This calls update.
 
 		log_verbose("<-----Returning from RemoteSL.refresh_state().")
+
+
+	################################################################################################################
+
+
+	def _remove_listeners(self):
+				
+		[drumPad.remove_value_listener(self._on_drum_pad_action) for drumPad in self._drumPad_buttons]
+		self._drumPad_select_button.remove_value_listener(self._on_drum_pad_select_pressed)
+
+		self.song.remove_tempo_listener(self._on_tempo_changed)
 
 
 	################################################################################################################
@@ -492,15 +563,6 @@ class RemoteSL(ControlSurface):
 
 		log("RemoteSL.request_rebuild_midi_map() called.")
 		super(RemoteSL, self).request_rebuild_midi_map()
-
-
-	################################################################################################################
-
-
-	def _remove_control_listeners(self):
-				
-		[drumPad.remove_value_listener(self._on_drum_pad_action) for drumPad in self._drumPad_buttons]
-		self._drumPad_select_button.remove_value_listener(self._on_drum_pad_select_pressed)
 
 
 	################################################################################################################
@@ -582,12 +644,40 @@ class RemoteSL(ControlSurface):
 	################################################################################################################
 
 
+	def turn_off_all_leds(self):
+		for led in Constants.ALL_LEDS:
+			self.send_midi((M.START_BYTE, led, 0))
+
+
+	################################################################################################################
+
+
+	def strobe_leds(self):
+
+		def _flash(count):
+			if count <= 0:
+				self.update()
+				return
+			for led in Constants.ALL_LEDS:
+				self.send_midi((M.START_BYTE, led, 1))
+				self.schedule_message(1, lambda led=led: self.send_midi((M.START_BYTE, led, 0)))
+
+			self.schedule_message(2, lambda: _flash(count - 1))
+		
+		_flash(6)
+
+
+	################################################################################################################
+
+
 	@override
 	def unlock_from_device(self, device):
 		"""Unlock the effect controller from the given device."""
 
 		log_info(f"RemoteSL.unlock_from_device({device}) called.")
 
+		super().unlock_from_device(device)
+				
 		self._effect_component._unlock_from_device(device)
 
 

@@ -167,6 +167,8 @@ class MixerComponent(Component):
 
 
 	def _add_listeners(self) -> None:
+
+		log_verbose(f"MixerComponent._add_listeners() called. Buttons: {self._btn_sel_faders}, {self._btn_sel_tbs}, {self._btn_sel_bbs}")
 		
 		self._btn_page_up.add_value_listener(self._on_btn_page_up_pressed)
 		self._btn_page_down.add_value_listener(self._on_btn_page_down_pressed)
@@ -385,10 +387,12 @@ class MixerComponent(Component):
 		log_info(f"MixerComponent.on_enabled_changed() called.  enabled={self.is_enabled()} explicit={self.is_enabled(True)}.")
 
 		if self.is_enabled():
+			log_verbose("\t|----->Enabling MixerComponent.")
 			# Called when component becomes active – do initial setup
 			self._add_listeners()
 			
 		else:
+			log_verbose("\t|----->Disabling MixerComponent.")
 			self._remove_listeners()
 			for strip in self._strips:
 				strip.set_assigned_track(None) 
@@ -717,6 +721,20 @@ class MixerChannelStrip(object):
 
 	################################################################################################################
 
+
+	def _is_track_alive(self) -> bool:
+		"""You need to check the track hasn't been deleted."""
+		if self._assigned_track is None:
+			return False
+		try:
+			# Accessing a property on a dead track raises Boost.Python.ArgumentError
+			_ = self._assigned_track.name
+			return True
+		except Exception:
+			return False
+
+	################################################################################################################
+
 	def _on_parameter_value_changed(self, value = None):
 		self._mixer_controller._on_strip_parameter_changed(self._index)
 
@@ -748,21 +766,23 @@ class MixerChannelStrip(object):
 	def slider_parameter(self) -> DeviceParameter | None:
 		"""Gets the actual Live.DeviceParameter currently controlled by the slider."""
 		
-		if self._assigned_track is not None:
-			slider_mode = self._mixer_controller.slider_mode # What is the currently selected use for the slider.
+		if self._assigned_track is None or not self._is_track_alive(): # is track alive checks for deleted tracks.
+			return None
 
-			if slider_mode == SLM.VOLUME:
-				return self._assigned_track.mixer_device.volume
-			
-			if slider_mode == SLM.PAN:
-				return self._assigned_track.mixer_device.panning
-			
-			if slider_mode >= SLM.SEND:
-				
-				send_index = slider_mode - SLM.SEND # What is the index of send currently controlled.
+		slider_mode = self._mixer_controller.slider_mode # What is the currently selected use for the slider.
 
-				if send_index < len(self._assigned_track.mixer_device.sends):
-					return self._assigned_track.mixer_device.sends[send_index]
+		if slider_mode == SLM.VOLUME:
+			return self._assigned_track.mixer_device.volume
+		
+		if slider_mode == SLM.PAN:
+			return self._assigned_track.mixer_device.panning
+		
+		if slider_mode >= SLM.SEND:
+			
+			send_index = slider_mode - SLM.SEND # What is the index of send currently controlled.
+
+			if send_index < len(self._assigned_track.mixer_device.sends):
+				return self._assigned_track.mixer_device.sends[send_index]
 
 		return None
 

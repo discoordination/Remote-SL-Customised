@@ -65,7 +65,7 @@ class Constants:
 		BUTTON_PRESSED: Final[int] = 1
 		BUTTON_RELEASED: Final[int] = 0
 		ABLETON_PID: Final[int] = 4
-	
+
 
 	################################################################################################################
 
@@ -388,11 +388,15 @@ class Constants:
 		BOTTOM_RIGHT = 4
 
 
+	ALL_LEDS: tuple[int, ...] = ( Mixer.SELECT_SLIDERS, Mixer.SELECT_BUTTONS_TOP, Mixer.SELECT_BUTTONS_BOTTOM, Effect.SELECT_TOP_BUTTON_ROW, Effect.SELECT_ENCODER, Effect.SELECT_BOTTOM_BUTTON_ROW, Effect.SELECT_POTS, Effect.SELECT_DRUM_PAD )
+
 ####################################################################################################################
 
 
 # === Convenience Aliases ===
 # These make the code more readable while maintaining clear namespacing
+
+
 
 H = Constants.Hardware
 M = Constants.MIDI

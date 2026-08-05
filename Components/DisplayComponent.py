@@ -44,7 +44,6 @@ if TYPE_CHECKING:
 	from ..RemoteSL import RemoteSL
 
 
-__all__ = ['DisplayComponent', 'ROW', 'DISPLAY']
 
 ####################################################################################################################
 
@@ -127,7 +126,7 @@ class _Display:
 	def set_row_string(self, row: ROW, text: str) -> None:
 		# Cut to row length
 
-		log(f"_Display.set_row_string(row: {row}, {text}")
+		log_verbose(f"_Display.set_row_string(row: {row}, text: \"{text}\")")
 
 		text = text[:H.NUM_CHARS_PER_DISPLAY_LINE]
 		# Sets a rows string and checks if matches or not.  Only sets to dirty if changed.
@@ -140,16 +139,21 @@ class _Display:
 				self._tr.text = text
 				self._tr.dirty = True
 		elif row == ROW.BL:
+			log_verbose(f"Setting row bl to: \"{text}\" current text is \"{self._bl.text}\"")
 			if self._bl.text != text:
 				self._bl.text = text
+				log_verbose("Setting row dirty.")
 				self._bl.dirty = True
 		elif row == ROW.BR:
 			if self._br.text != text:
 				self._br.text = text
 				self._br.dirty = True
 
+
 	def clear_row(self, row: ROW):
+
 		self.set_row_string(row, "")
+		
 
 
 ####################################################################################################################
@@ -200,7 +204,7 @@ class DisplayComponent(Component):
 	_control_surface     : RemoteSL
 
 	_cachedDisplay       : _Display
-	_currentDisplay      : _Display
+	_primaryDisplay      : _Display
 	_message_popup_ticks : int
 
 
@@ -216,13 +220,12 @@ class DisplayComponent(Component):
 		self._control_surface = control_surface
 
 		# Initialize a blank display.  Created dirty.
-		self._currentDisplay = _Display()
+		self._primaryDisplay = _Display()
 
 		# Memory for displaying popups.
 		self._cachedDisplay = _Display()
 
 		self._message_popup_ticks = -1 	# -1 means timer disabled positive is running and 0 means fire.
-
 
 		# # Do you need this detail surely 4 strings would be sufficient for the display and you could format them all in advance.
 		# self.left_strip_names =		 	[str() for _ in range(H.NUM_CONTROLS_PER_ROW)]
@@ -239,15 +242,29 @@ class DisplayComponent(Component):
 
 	@property
 	def _dirty(self) -> bool:
-		return self._currentDisplay.dirty
+		return self._primaryDisplay.dirty
 
 	@_dirty.setter
 	def _dirty(self, newValue: bool) -> None:
 		if newValue == True:
-			self._currentDisplay.set_all_dirty()
+			self._primaryDisplay.set_all_dirty()
 		else:
-			self._currentDisplay.set_all_clean()
+			self._primaryDisplay.set_all_clean()
 
+
+
+	################################################################################################################
+
+
+	@property
+	def current_display(self) -> _Display:
+		if self._is_timed_message_being_displayed():
+			return self._cachedDisplay
+		else:
+			return self._primaryDisplay
+		
+
+	################################################################################################################
 
 	@property
 	def control_surface(self):
@@ -263,12 +280,17 @@ class DisplayComponent(Component):
 
 		if (row == ROW.TL):
 			self.control_surface.send_midi(SYX.CLEAR_ROW_TL)
+			self.current_display.clear_row(ROW.TL)
 		elif (row == ROW.TR):
 			self.control_surface.send_midi(SYX.CLEAR_ROW_TR)
+			self.current_display.clear_row(ROW.TR)
 		elif (row == ROW.BL):
+			log_verbose(f"Clearing BL on display: {'cached' if self._is_timed_message_being_displayed() else 'primary'}.")
 			self.control_surface.send_midi(SYX.CLEAR_ROW_BL)
+			self.current_display.clear_row(ROW.BL)
 		elif (row == ROW.BR):
 			self.control_surface.send_midi(SYX.CLEAR_ROW_BR)
+			self.current_display.clear_row(ROW.BR)
 
 
 	################################################################################################################
@@ -279,8 +301,12 @@ class DisplayComponent(Component):
 		
 		if(display == DISPLAY.LEFT):
 			self.control_surface.send_midi(SYX.CLEAR_LEFT_DISPLAY)
+			self.current_display.clear_row(ROW.TL)
+			self.current_display.clear_row(ROW.BL)
 		else:
 			self.control_surface.send_midi(SYX.CLEAR_RIGHT_DISPLAY)
+			self.current_display.clear_row(ROW.TR)
+			self.current_display.clear_row(ROW.BR)
 
 
 	################################################################################################################
@@ -290,6 +316,11 @@ class DisplayComponent(Component):
 		"""Send the sysex command that clears both the left and right displays."""
 
 		self.control_surface.send_midi(SYX.CLEAR_BOTH_DISPLAYS)
+		# Hmmm setting the rows is good because it keeps them in sync with what is shown.... However this means you don't 
+		# set dirty in current_display.clear_row because the hardware has already been cleared.
+		for row in ROW:
+			self.current_display.clear_row(row) # okay we don't set dirty because we hardware cleared the screen.
+
 
 
 	################################################################################################################
@@ -340,7 +371,7 @@ class DisplayComponent(Component):
 		display_string = display_string.strip()
 
 		# Special rules for something ending with dB then it takes away the dB.
-		# TODO: Would be better maybe to limit to 2decimal places.
+		# TODO: Would be better maybe to limit to 2decimal places.  You want to send your formatting with the string or parameter or format all values before sending them to _generate_strip_string.
 		if (
 			len(display_string) > Constants.Hardware.NUM_CHARS_PER_DISPLAY_STRIP - 1
 			and display_string.endswith("dB")
@@ -368,6 +399,7 @@ class DisplayComponent(Component):
 		log_info(f"DisplayComponent.on_enabled_changed() called.  enabled={self.is_enabled()} explicit={self.is_enabled(True)}.")
 
 		if self.is_enabled():
+			log_verbose("\t|----->Enabling Display Component.")
 			# Called when component becomes active – do initial setup
 			# We don't need to do anything here.  If enabled then the display works.
 			# We could show the welcome message maybe.
@@ -375,9 +407,10 @@ class DisplayComponent(Component):
 			self.show_timed_message("discoordinated by Will W", 6.0, True, ROW.TR)
 			
 		else:
+			log_verbose("\t|----->Disabling Display Component.")
 			# Again we don't really need to do anything... Could clear the screens.
 			self.clear_displays()
-			self._currentDisplay = _Display()
+			self._primaryDisplay = _Display()
 			self._cachedDisplay = _Display()
 
 		return super().on_enabled_changed() # This calls update
@@ -429,16 +462,26 @@ class DisplayComponent(Component):
 	################################################################################################################
 
 
-	def setup_display_for_params(self, display: DISPLAY, names: list[str], parameters: Sequence[Optional[DeviceParameter]]):
-		"""Here we generate strings for showing parameters on the left display"""
+	def setup_display_for_params(self, display: DISPLAY, names: list[str], parameters: Sequence[DeviceParameter | None]):
+		"""Here we generate strings for showing parameters on the chosen display."""
 
-		display_to_set = self._cachedDisplay if self._is_timed_message_being_displayed() else self._currentDisplay
+		log_info(f"DisplayComponent.setup_display_for_params({display}, {names}, {', '.join((param.str_for_value(param.value) if param is not None else 'None') for param in parameters)}) called.")
 
-		log(f"DisplayComponent.setup_display_for_params({display}, {names}, {parameters} called.)")
+		display_to_set = self._cachedDisplay if self._is_timed_message_being_displayed() else self._primaryDisplay
+		log_verbose(f"Writing to display: {'cached' if self._is_timed_message_being_displayed() else 'primary'}.")
 
 		rows = self._generate_display_strip(names, parameters)
+
 		display_to_set.set_row_string(ROW.TL if display == DISPLAY.LEFT else ROW.TR, rows[0])
 		display_to_set.set_row_string(ROW.BL if display == DISPLAY.LEFT else ROW.BR, rows[1])
+
+
+	################################################################################################################
+	
+	
+	def set_refresh_displays(self) -> None:
+		self._cachedDisplay.set_all_dirty()
+		self._primaryDisplay.set_all_dirty()
 
 
 	################################################################################################################
@@ -471,7 +514,7 @@ class DisplayComponent(Component):
 
 		log_info(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
 
-		# TODO: At some point you need to work out what happens when 1 timed message overwrites another...????
+		# TODO: At some point you need to work out what happens when 1 timed message overwrites another...????  Currently and this is quite acceptable the second timed message overwrites the first.  However queueing them and having timers for each would be ultra funky.
 		#  		probably you want to queue them but keep the original display.
 
 		# Convert seconds to clock frames (update_display runs roughly 5 times a second)
@@ -481,7 +524,7 @@ class DisplayComponent(Component):
 
 		# only cache if not cached already.
 		if not self._is_timed_message_being_displayed():
-			self._cachedDisplay = self._currentDisplay.copy()
+			self._cachedDisplay = self._primaryDisplay.copy()
 			self._cachedDisplay.set_all_dirty()
 
 		# We need to be able to override the current popup so we disable the timer.
@@ -496,7 +539,7 @@ class DisplayComponent(Component):
 
 		# Now we set the timer.
 		self._message_popup_ticks = int(duration_seconds * 5)
-		display = self._currentDisplay
+		display = self._primaryDisplay
 
 		# Convoluted way to clear other row of display used for message if it's not also used for the message.
 		for row in ROW:
@@ -541,8 +584,8 @@ class DisplayComponent(Component):
 			self._message_popup_ticks -= 1
 			
 		if self._message_popup_ticks == 0:
-			log("DISPLAY ENGINE: Hold timer expired. Releasing screen back to layout matrix.")
-			self._currentDisplay = self._cachedDisplay.copy()
+			log_verbose("DISPLAY ENGINE: Hold timer expired. Releasing screen back to layout matrix. Copying _cachedDisplay to current and setting to dirty.")
+			self._primaryDisplay = self._cachedDisplay.copy()
 			self._dirty = True
 
 		# actually we want to display it.
@@ -552,23 +595,23 @@ class DisplayComponent(Component):
 
 		if self._dirty:
 
-			if self._currentDisplay.all_rows_empty():
+			if self._primaryDisplay.all_rows_empty():
 				self.clear_displays()
-				self._currentDisplay.set_all_clean()
+				self._primaryDisplay.set_all_clean()
 
-			elif self._currentDisplay.left_display_empty():
+			elif self._primaryDisplay.left_display_empty():
 				self.clear_display(DISPLAY.LEFT)
-				self._currentDisplay.set_rows_clean(ROW.TL, ROW.BL)
+				self._primaryDisplay.set_rows_clean(ROW.TL, ROW.BL)
 
-			elif self._currentDisplay.right_display_empty():
+			elif self._primaryDisplay.right_display_empty():
 				self.clear_display(DISPLAY.RIGHT)
-				self._currentDisplay.set_rows_clean(ROW.TL, ROW.BL)
+				self._primaryDisplay.set_rows_clean(ROW.TR, ROW.BR)
 				
 			else:
 
 				for row in ROW:
 
-					current_row = self._currentDisplay.all_rows[row]
+					current_row = self._primaryDisplay.all_rows[row]
 
 					log(f"Writing row: {current_row}")
 
@@ -586,7 +629,7 @@ class DisplayComponent(Component):
 		log(f"DisplayComponent.updateParameter({index_of_parameter}, {parameter}) called.")
 
 		# Do you want to update the cache if not being shown or update the actual display.
-		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+		display_to_modify = self._primaryDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
 
 		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
 
@@ -612,7 +655,7 @@ class DisplayComponent(Component):
 		log_verbose(f"DisplayComponent.write_display_rows(\"{text}\", {rows if rows else ''}) called.")
 		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
 
-		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+		display_to_modify = self._primaryDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
 
 		if not rows:
 			rows = (ROW.TL,)
@@ -629,7 +672,7 @@ class DisplayComponent(Component):
 
 		log_verbose(f"DisplayComponent.write_centred_display_rows(\"{text}\", {rows if rows else ''}) called.")
 
-		display_to_modify = self._currentDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
+		display_to_modify = self._primaryDisplay if not self._is_timed_message_being_displayed() else self._cachedDisplay
 		log(f"Writing to {'current_display' if not self._is_timed_message_being_displayed() else 'cached_display'}.")
 
 		if len(rows) == 0:
@@ -641,7 +684,7 @@ class DisplayComponent(Component):
 
 	################################################################################################################
 
-
+__all__ = ['DisplayComponent', 'ROW', 'DISPLAY']
 
 ####################################################################################################################
 ####################################################################################################################
