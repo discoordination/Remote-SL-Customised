@@ -282,10 +282,6 @@ class RemoteSL(ControlSurface):
 		# for component in self.components: #? I don't believe i have to manually call this.
 		# 	component.set_enabled(False)
 
-		# TODO: Check components are disabled after disable.
-		for component in self.components:
-			log_verbose(f"{component.name} enabled {component.is_enabled()}")
-
 
 
 	################################################################################################################

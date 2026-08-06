@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 
 ####################################################################################################################
-
+#FIXME: Isn't it a bit strange to use a cached and a primary display object.  Why not just timed and not timed...??
 
 
 class DISPLAY(Enum):
@@ -514,7 +514,7 @@ class DisplayComponent(Component):
 
 		log_info(f"DISPLAY ENGINE: Triggering timed message popup -> '{message_text}'")
 
-		# TODO: At some point you need to work out what happens when 1 timed message overwrites another...????  Currently and this is quite acceptable the second timed message overwrites the first.  However queueing them and having timers for each would be ultra funky.
+		# TODO: At some point you need to work out what happens when 1 timed message overwrites another...????  Currently and this is quite acceptable the second timed message overwrites the first.  However queueing them and having timers for each would be ultra funky. 
 		#  		probably you want to queue them but keep the original display.
 
 		# Convert seconds to clock frames (update_display runs roughly 5 times a second)

@@ -21,6 +21,7 @@
 # EffectComponent.receive_midi_note // No midi notes sent.
 # EffectComponent.refresh_state // Theoretically called in the midi_cc loop
 
+# FIXME: Scrolling up seems to go on forever on the effect banks.
 
 ####################################################################################################################
 
